@@ -1,0 +1,50 @@
+{
+  "product_name": "Skyline Rush",
+  "reference_product": "Subway Surfers (SYBO Games, iOS/Android endless runner)",
+  "research_date": "2026-08-31",
+  "target_platforms": [
+    "iOS",
+    "iPadOS"
+  ],
+  "chosen_stack": "Unity (C#) client + Node.js/TypeScript (NestJS) backend + PostgreSQL + Redis + S3/CloudFront",
+  "status": "complete",
+  "evidence_classes": [
+    "verified",
+    "strongly_inferred",
+    "proposed"
+  ],
+  "documents": [
+    { "path": "README.md", "status": "complete" },
+    { "path": "00_REFERENCE_ANALYSIS.md", "status": "complete" },
+    { "path": "01_PRD.md", "status": "complete" },
+    { "path": "02_UX_SCREEN_SPEC.md", "status": "complete" },
+    { "path": "03_USER_FLOWS.md", "status": "complete" },
+    { "path": "04_SYSTEM_ARCHITECTURE.md", "status": "complete" },
+    { "path": "05_DATA_MODEL.md", "status": "complete" },
+    { "path": "06_API_SPEC.md", "status": "complete" },
+    { "path": "07_AI_OR_AUTOMATION_PIPELINE.md", "status": "complete" },
+    { "path": "08_SAFETY_PRIVACY_COMPLIANCE.md", "status": "complete" },
+    { "path": "09_AUTH_AND_PERMISSIONS.md", "status": "complete" },
+    { "path": "10_OFFLINE_SYNC_AND_STORAGE.md", "status": "complete" },
+    { "path": "11_MONETIZATION_AND_BILLING.md", "status": "complete" },
+    { "path": "12_ANALYTICS_AND_OBSERVABILITY.md", "status": "complete" },
+    { "path": "13_TEST_PLAN.md", "status": "complete" },
+    { "path": "14_IMPLEMENTATION_ROADMAP.md", "status": "complete" },
+    { "path": "15_PRODUCT_BACKLOG.md", "status": "complete" },
+    { "path": "16_REPO_STRUCTURE.md", "status": "complete" },
+    { "path": "17_DESIGN_SYSTEM.md", "status": "complete" },
+    { "path": "18_RELEASE_CHECKLIST.md", "status": "complete" },
+    { "path": "19_PROMPT_LIBRARY.md", "status": "not_applicable" },
+    { "path": "20_ACCEPTANCE_CRITERIA.md", "status": "complete" },
+    { "path": "21_RISKS_AND_OPEN_QUESTIONS.md", "status": "complete" },
+    { "path": "SOURCES.md", "status": "complete" }
+  ],
+  "starter_code_included": false,
+  "open_decisions": [
+    "Whether the Skyline Pass ships as a non-renewing per-Season purchase or an auto-renewing subscription",
+    "Target soft-launch market(s), which drives localization and region-specific compliance scope",
+    "Minimum supported iOS version and device tier",
+    "Whether to integrate a platform-level age-signal API beyond self-reported birth year (pending re-verification of current Apple developer documentation)",
+    "Team sizing/cadence commitment for the live-ops content pipeline (Phase 4 onward)"
+  ]
+}
