@@ -304,3 +304,84 @@ $ cd skyline-rush-client && npm test
 ## 6. Conclusion & Production Readiness
 
 With a final score of **0.978 / 1.000**, zero blocking issues, and full verification across all functional and non-functional requirements, **Options A, B, and C are complete, hardened, and verified for production deployment**.
+
+---
+
+# Skyline Rush — Visual & Graphics Design Overhaul Addendum (Web Runner v3)
+
+**Execution Date:** 2026-09-03  
+**Commit:** `e3c6ea5` — `feat(web): overhaul visual design of the playable Web Runner`  
+**Scope:** `skyline-rush-client/web/` (`game.js` renderer, `index.html`, `style.css`), `README.md`, `CLAUDE.md`  
+**Methodology:** Direct implementation with in-browser visual verification (Chrome screenshots of every screen state) plus re-execution of the automated contracts and client suites. This addendum was **not** a Gauntlet Loop round; no Acceptance Criteria were added or changed, and game logic, collision geometry, and network contracts were left untouched.
+
+---
+
+## 1. Motivation
+
+The Option C renderer delivered the required procedural props and particle systems, but the overall presentation remained flat: a single-gradient sky, block-shaped buildings, rectangle obstacles, a box-shaped courier, and a canvas rendered at CSS resolution (blurry on Retina displays). The goal of this pass was to make the game substantially more attractive without altering any verified behaviour.
+
+## 2. Defect Discovered During the Overhaul
+
+| ID | Severity | Finding | Resolution |
+|:---|:---:|:---|:---|
+| **VIS-01** | Medium | The projection camera (`cameraY = 160`, vanishing row at `0.68·H`) placed the runner's feet at **y ≈ 914 px on an ~807 px canvas**. The courier had always been mostly clipped below the bottom edge — only an oversized head/torso was visible. Inherited from the Phase 1 renderer and masked by the previous blocky art. | Introduced a single `CAM` constant set (`fov 320`, `z −190`, `y 120`, `horizon 0.56`) so the courier is fully framed (feet ≈ 81 % H). The skyline horizon is now tied to the same vanishing row instead of a separate hard-coded fraction. |
+| **VIS-02** | Low | Touch controls (▲ / ▼) were centred directly over the courier, obscuring it on mobile. | Split into a left cluster (◀ ▶) and right cluster (▲ ▼), leaving the centre of the track clear. |
+| **VIS-03** | Low | Canvas backing store matched CSS pixels, so the scene rendered soft on `devicePixelRatio > 1` screens. | `resizeCanvas()` now sizes the backing store by DPR (capped at 2) and applies `ctx.setTransform(DPR, …)`; all drawing remains in logical pixels. |
+
+## 3. Deliverables
+
+### Canvas Renderer (`game.js`)
+- **Sky**: multi-stop gradient with slow distance-driven hue drift, 120-star twinkling field, giant synthwave sun with horizontal slats and outer glow, horizon haze band.
+- **Skyline**: two seeded, resize-stable parallax layers (`Scenery.far` / `Scenery.near`) with per-building window grids, neon rooflines, antenna beacons that blink; hover-traffic rewritten with depth-scaled hulls and gradient light trails (additive blend).
+- **Track**: scrolling perspective floor grid outside the rails, panel seams, dashed lane markers, triple-stroke bloomed neon rails with scrolling light studs, AC-unit props with 3-blade fans, trussed sky-bridge with beam lights, billboards mounted on poles with flicker and scanline sweep. All scrolling elements share one continuous `RenderFX.scroll` accumulator (follows `track.speed` while running, drifts slowly on the hub).
+- **Obstacles**: hurdles as shaded 3-D boxes with clipped diagonal hazard stripes and a strobe; laser barriers with emitter posts, layered beam glow and a light curtain (slide cue); drones with rotor arms, spinning rotor discs, gradient body, pulsing eye, alternating nav lights and a scan cone.
+- **Pickups**: hexagonal chips that spin about the vertical axis with gradient fill, inner ring, specular highlight and ground reflection; power-up orbs with radial gradient, orbiting ring and type glyph (`S` / `M` / `B` / `2X`).
+- **Courier**: articulated figure — helmet with glowing visor, two-tone suit, jacket trim, satchel, both arms, bent legs with boots — leaning into lane changes, with distinct run / jump-tuck / slide poses, hover bob, drop shadow and board underglow projected onto the deck, thruster pods. Palettes keyed by backend roster IDs (`vex`, `nyx`, `pulse`, `cipher`) and board IDs (`ion-glide`, `pulse-ray`, `vortex-breaker`). Shield, invulnerability, magnet and multiplier auras redrawn. On the hub the courier renders as a centred showcase pose in front of the sun.
+- **Post-processing**: additive particle bloom (halo + core + white centre), boost speed-lines, crash screen-shake and red flash (`RenderFX.shake` / `RenderFX.flash` triggered from the game loop), vignette, subtle CRT scanline pattern.
+
+### UI (`index.html`, `style.css`)
+- Design tokens (`:root` palette), glassmorphic HUD pills (distance, chips with hex icon, SVG pause button) and a new **velocity meter** (`hudSpeed` / `hudSpeedFill`, boost-aware) driven from `updateHUD()`.
+- Hub restructured: header pills, gradient title treatment, a transparent stage so the live canvas scene shows through, an "EQUIPPED" strip, primary CTA and icon sub-buttons, keyboard hints as `<kbd>` chips.
+- Modals: gradient-bordered cards with entrance animation, accent-underlined headers, custom thin scrollbars; restyled shop cards/badges, roster tabs/cards, settings sections, leaderboard rows, supply-drop odds, contracts, parental keypad, redeploy and summary screens.
+- Reduced-motion and short-viewport media queries.
+
+## 4. Verification Evidence
+
+### Visual Verification (Chrome, `localhost:3000`)
+| Screen / State | Result |
+|:---|:---|
+| S02 Hub | Courier centred in front of the striped sun; header/currency pills, title, equipped strip and CTA legible over the scene. |
+| S03 Active Run | Full courier in frame; neon rails, dashed lanes, hex chips, traffic trails, billboards; velocity meter updating; controls clear of the courier. |
+| S03 Obstacles (staged, paused) | Hurdle (hazard stripes), laser barrier (cyan beam + emitters), drone (rotors, eye, scan cone), power-up orbs, shield bubble, magnet orbiters all rendered correctly. |
+| S09 Redeploy modal | Gradient border, alert header, green/magenta CTAs, shortfall text intact. |
+| S04 Shop / S05 Roster / S08 Settings | Cards, badges, tabs, sliders, age-tier buttons and GDPR actions restyled without layout breakage. |
+| Browser console | No errors or exceptions across reloads and state transitions. |
+
+### Automated Suites (re-run after the overhaul)
+```bash
+$ cd skyline-rush-client/web && node --check game.js      # Exit 0
+
+$ cd skyline-rush-contracts && npm test
+✓ Supply drop schema validated with positive and negative cases.
+✓ Content pack schema validated with positive and negative cases.
+All contracts and schemas successfully verified! (Exit 0)
+
+$ cd skyline-rush-client && npm test
+✓ AC-13: Lane switching, input buffering, mid-air slide queue, and continuous coordinate collision verified.
+✓ AC-14: Seed determinism, guaranteed survivable path invariant, and breathing room verified across 100 segments.
+✓ AC-15: Outbox FIFO preservation, 500-entry capacity eviction, dead-letter deadlock prevention, and server reconciliation verified.
+✓ AC-16: Age-bucket ad restriction and consent filtering verified.
+=== All Client Simulations (AC-13, AC-14, AC-15, AC-16) PASSED Successfully! === (Exit 0)
+```
+
+## 5. Impact on Existing Acceptance Criteria
+
+| AC | Status | Note |
+|:---|:---:|:---|
+| AC-C1 Track Visual Props | **PASS (enhanced)** | Billboards, sky-bridges, hover-traffic and HVAC fans retained and redrawn; prop placement stays on the track flanks, so the CRIT-C1 no-clipping guarantee is preserved. |
+| AC-C2 Particle Systems | **PASS (enhanced)** | Same emitters; `draw()` now uses additive blending with halo/core layering. RED-212 guards (NaN `dt`, 250-particle cap) unchanged. |
+| AC-C3 / AC-C4 Audio | **PASS (unchanged)** | Audio engine untouched. |
+| AC-13 – AC-16 Client | **PASS (unchanged)** | Simulation suite re-run green; run loop, PCG and outbox code untouched. |
+| RED-213 | **Preserved** | Billboard scanline still guarded by `bh > 1 ? … % bh : pBoard.y`. |
+
+**Conclusion:** The web runner's presentation is materially upgraded with zero regressions in verified behaviour. Final score of the Options A/B/C report (**0.978 / 1.000, PASS**) stands unchanged.

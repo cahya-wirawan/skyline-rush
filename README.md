@@ -119,4 +119,4 @@ The full product design package produced by the `product-blueprint` skill is loc
 - [`08_SAFETY_PRIVACY_COMPLIANCE.md`](build-package/08_SAFETY_PRIVACY_COMPLIANCE.md) & [`09_AUTH_AND_PERMISSIONS.md`](build-package/09_AUTH_AND_PERMISSIONS.md) — COPPA/GDPR child privacy and auth architecture.
 - [`10_OFFLINE_SYNC_AND_STORAGE.md`](build-package/10_OFFLINE_SYNC_AND_STORAGE.md) — Offline outbox sync and reconciliation.
 - [`14_IMPLEMENTATION_ROADMAP.md`](build-package/14_IMPLEMENTATION_ROADMAP.md) & [`20_ACCEPTANCE_CRITERIA.md`](build-package/20_ACCEPTANCE_CRITERIA.md) — Phased roadmap and Given/When/Then acceptance criteria.
-- [`report-01.md`](report-01.md) — Unified Gauntlet execution report covering Phase 0/1 and Options A, B, and C.
+- [`report-01.md`](report-01.md) — Unified Gauntlet execution report covering Phase 0/1 and Options A, B, and C, plus the Web Runner v3 visual overhaul addendum.
