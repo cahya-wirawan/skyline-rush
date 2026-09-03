@@ -1,0 +1,16 @@
+{
+    "name": "SkylineRush.ProceduralGen",
+    "rootNamespace": "SkylineRush.ProceduralGen",
+    "references": [
+        "SkylineRush.Run"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

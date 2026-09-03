@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: skyline-rush-postgres
+    environment:
+      POSTGRES_USER: skylinerush
+      POSTGRES_PASSWORD: skylinerush_dev_password
+      POSTGRES_DB: skylinerush_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./libs/db/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skylinerush -d skylinerush_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: skyline-rush-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skyline-rush-gateway
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      POSTGRES_URL: postgresql://skylinerush:skylinerush_dev_password@postgres:5432/skylinerush_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev_super_secret_jwt_key_2026
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:

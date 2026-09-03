@@ -1,0 +1,27 @@
+{
+    "name": "SkylineRush.Tests",
+    "rootNamespace": "SkylineRush.Tests",
+    "references": [
+        "SkylineRush.Run",
+        "SkylineRush.ProceduralGen",
+        "SkylineRush.Storage",
+        "SkylineRush.Networking",
+        "SkylineRush.Ads",
+        "SkylineRush.Analytics",
+        "SkylineRush.Billing",
+        "SkylineRush.Meta"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

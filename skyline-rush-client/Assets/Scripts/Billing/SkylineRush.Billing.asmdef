@@ -1,0 +1,14 @@
+{
+    "name": "SkylineRush.Billing",
+    "rootNamespace": "SkylineRush.Billing",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

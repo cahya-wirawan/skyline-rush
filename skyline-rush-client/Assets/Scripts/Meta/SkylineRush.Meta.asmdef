@@ -1,0 +1,19 @@
+{
+    "name": "SkylineRush.Meta",
+    "rootNamespace": "SkylineRush.Meta",
+    "references": [
+        "SkylineRush.Run",
+        "SkylineRush.Storage",
+        "SkylineRush.Networking",
+        "SkylineRush.Ads"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

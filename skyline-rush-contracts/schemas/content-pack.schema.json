@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ContentPack",
+  "description": "Schema for remote District content packs delivered via CDN",
+  "type": "object",
+  "properties": {
+    "content_pack_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "district_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "cdn_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "checksum": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["staged", "live", "rolled_back"]
+    },
+    "asset_bundles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "relative_path": { "type": "string" },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "hash": { "type": "string" }
+        },
+        "required": ["name", "relative_path", "size_bytes", "hash"]
+      }
+    }
+  },
+  "required": ["content_pack_id", "district_id", "version", "cdn_url", "checksum", "status"]
+}

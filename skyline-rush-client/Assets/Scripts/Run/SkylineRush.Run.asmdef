@@ -1,0 +1,16 @@
+{
+    "name": "SkylineRush.Run",
+    "rootNamespace": "SkylineRush.Run",
+    "references": [
+        "SkylineRush.Storage"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

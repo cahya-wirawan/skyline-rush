@@ -1,0 +1,1347 @@
+openapi: 3.0.3
+info:
+  title: Skyline Rush API
+  version: 1.0.0
+  description: >
+    Official REST API specification for Skyline Rush, an original iOS/iPadOS
+    3-lane endless runner. All mutating economy and run endpoints require an
+    Idempotency-Key header.
+servers:
+  - url: https://api.skylinerush.game
+    description: Production Gateway
+  - url: http://localhost:3000
+    description: Local Dev Gateway
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access JWT issued by Profile & Auth service (15-minute expiry).
+
+  parameters:
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Client-generated UUID to guarantee exactly-once execution.
+
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Opaque pagination cursor.
+
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 25
+        minimum: 1
+        maximum: 100
+      description: Maximum number of items to return.
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: INSUFFICIENT_BALANCE
+            message:
+              type: string
+              example: Not enough Cores for this Redeploy.
+            details:
+              type: object
+              additionalProperties: true
+
+    AgeBucket:
+      type: string
+      enum: [under_13, 13_15, 16_plus]
+
+    AuthGuestRequest:
+      type: object
+      required:
+        - guest_device_id
+        - age_bucket
+      properties:
+        guest_device_id:
+          type: string
+          format: uuid
+        age_bucket:
+          $ref: '#/components/schemas/AgeBucket'
+
+    AuthAppleRequest:
+      type: object
+      required:
+        - identity_token
+      properties:
+        identity_token:
+          type: string
+        guest_device_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    AuthResponse:
+      type: object
+      required:
+        - player_id
+        - access_token
+        - refresh_token
+      properties:
+        player_id:
+          type: string
+          format: uuid
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        age_bucket:
+          $ref: '#/components/schemas/AgeBucket'
+
+    RefreshRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+
+    RefreshResponse:
+      type: object
+      required:
+        - access_token
+      properties:
+        access_token:
+          type: string
+
+    ProfileResponse:
+      type: object
+      required:
+        - player_id
+        - display_name
+        - age_bucket
+        - equipped
+      properties:
+        player_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        age_bucket:
+          $ref: '#/components/schemas/AgeBucket'
+        equipped:
+          type: object
+          required:
+            - runner_id
+            - board_id
+          properties:
+            runner_id:
+              type: string
+            board_id:
+              type: string
+
+    RunSubmitRequest:
+      type: object
+      required:
+        - district_id
+        - runner_id
+        - board_id
+        - meters
+        - chips_collected
+        - client_submitted_at
+        - duration_seconds
+      properties:
+        district_id:
+          type: string
+        runner_id:
+          type: string
+        board_id:
+          type: string
+        meters:
+          type: integer
+          minimum: 0
+        chips_collected:
+          type: integer
+          minimum: 0
+        crashed_cause:
+          type: string
+          nullable: true
+        client_submitted_at:
+          type: string
+          format: date-time
+        duration_seconds:
+          type: number
+          minimum: 0
+        powerups_collected:
+          type: integer
+          minimum: 0
+
+    RunSubmitResponse:
+      type: object
+      required:
+        - run_id
+        - integrity_flag
+        - rewards
+        - new_district_best
+      properties:
+        run_id:
+          type: string
+          format: uuid
+        integrity_flag:
+          type: string
+          enum: [ok, suspect, excluded]
+        rewards:
+          type: object
+          required:
+            - chips_granted
+            - cores_granted
+            - pass_xp_granted
+          properties:
+            chips_granted:
+              type: integer
+            cores_granted:
+              type: integer
+            pass_xp_granted:
+              type: integer
+        new_district_best:
+          type: boolean
+
+    RedeployRequest:
+      type: object
+      required:
+        - method
+      properties:
+        run_id:
+          type: string
+          format: uuid
+          nullable: true
+        method:
+          type: string
+          enum: [ad, cores]
+        ad_receipt:
+          type: string
+          nullable: true
+
+    ParentalGateVerifyRequest:
+      type: object
+      required:
+        - answer
+      properties:
+        challenge_id:
+          type: string
+        answer:
+          type: integer
+        num1:
+          type: integer
+        num2:
+          type: integer
+        challenge_solution:
+          type: integer
+
+    ParentalGateVerifyResponse:
+      type: object
+      required:
+        - parental_gate_token
+        - expires_in_seconds
+      properties:
+        parental_gate_token:
+          type: string
+        expires_in_seconds:
+          type: integer
+
+    RedeployResponse:
+      type: object
+      required:
+        - cores_spent
+        - cores_remaining
+      properties:
+        cores_spent:
+          type: integer
+        cores_remaining:
+          type: integer
+
+    EconomyBalanceResponse:
+      type: object
+      required:
+        - chips
+        - cores
+      properties:
+        chips:
+          type: integer
+          minimum: 0
+        cores:
+          type: integer
+          minimum: 0
+
+    LedgerEntryItem:
+      type: object
+      required:
+        - entry_id
+        - currency
+        - delta
+        - reason
+        - created_at
+      properties:
+        entry_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+          enum: [chips, cores]
+        delta:
+          type: integer
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    LedgerResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerEntryItem'
+        next_cursor:
+          type: string
+          nullable: true
+
+    ContractItem:
+      type: object
+      required:
+        - contract_id
+        - type
+        - objective
+        - reward
+        - progress
+        - target
+        - completed
+        - claimed
+      properties:
+        contract_id:
+          type: string
+        type:
+          type: string
+          enum: [daily, weekly_heist]
+        objective:
+          type: object
+          required:
+            - metric
+            - target
+          properties:
+            metric:
+              type: string
+            target:
+              type: integer
+        reward:
+          type: object
+          properties:
+            chips:
+              type: integer
+            cores:
+              type: integer
+        progress:
+          type: integer
+        target:
+          type: integer
+        completed:
+          type: boolean
+        claimed:
+          type: boolean
+        active_from:
+          type: string
+          format: date-time
+        active_to:
+          type: string
+          format: date-time
+
+    ActiveContractsResponse:
+      type: object
+      required:
+        - daily
+      properties:
+        daily:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContractItem'
+        weekly_heist:
+          $ref: '#/components/schemas/ContractItem'
+          nullable: true
+
+    ClaimContractResponse:
+      type: object
+      required:
+        - contract_id
+        - reward
+      properties:
+        contract_id:
+          type: string
+        reward:
+          type: object
+          properties:
+            chips:
+              type: integer
+            cores:
+              type: integer
+
+    SupplyDropTableEntry:
+      type: object
+      required:
+        - reward
+        - probability
+      properties:
+        reward:
+          type: string
+        probability:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+        item_type:
+          type: string
+          enum: [chips, cores, runner, board, cosmetic_trail]
+        min_amount:
+          type: integer
+        max_amount:
+          type: integer
+
+    SupplyDropTableResponse:
+      type: object
+      required:
+        - table_id
+        - version
+        - entries
+      properties:
+        table_id:
+          type: string
+        version:
+          type: integer
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupplyDropTableEntry'
+
+    SupplyDropOpenRequest:
+      type: object
+      required:
+        - acquired_via
+      properties:
+        acquired_via:
+          type: string
+          enum: [earned, purchased]
+        table_id:
+          type: string
+          default: standard-v7
+
+    SupplyDropOpenResponse:
+      type: object
+      required:
+        - open_id
+        - table_id
+        - table_version
+        - result
+      properties:
+        open_id:
+          type: string
+          format: uuid
+        table_id:
+          type: string
+        table_version:
+          type: integer
+        result:
+          type: object
+          required:
+            - reward
+            - amount
+          properties:
+            reward:
+              type: string
+            amount:
+              type: integer
+            item_type:
+              type: string
+
+    RosterItem:
+      type: object
+      required:
+        - id
+        - owned
+        - equipped
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        owned:
+          type: boolean
+        equipped:
+          type: boolean
+        unlock_cost_cores:
+          type: integer
+          nullable: true
+
+    RosterResponse:
+      type: object
+      required:
+        - runners
+        - boards
+      properties:
+        runners:
+          type: array
+          items:
+            $ref: '#/components/schemas/RosterItem'
+        boards:
+          type: array
+          items:
+            $ref: '#/components/schemas/RosterItem'
+
+    RosterEquipRequest:
+      type: object
+      required:
+        - item_type
+        - item_id
+      properties:
+        item_type:
+          type: string
+          enum: [runner, board]
+        item_id:
+          type: string
+
+    RosterUnlockRequest:
+      type: object
+      required:
+        - item_type
+        - item_id
+        - method
+      properties:
+        item_type:
+          type: string
+          enum: [runner, board]
+        item_id:
+          type: string
+        method:
+          type: string
+          enum: [cores]
+
+    LeaderboardItem:
+      type: object
+      required:
+        - rank
+        - player_id
+        - display_name
+        - meters
+      properties:
+        rank:
+          type: integer
+        player_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        meters:
+          type: integer
+
+    SelfRank:
+      type: object
+      required:
+        - rank
+        - meters
+      properties:
+        rank:
+          type: integer
+        meters:
+          type: integer
+
+    LeaderboardResponse:
+      type: object
+      required:
+        - items
+        - self_rank
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LeaderboardItem'
+        self_rank:
+          $ref: '#/components/schemas/SelfRank'
+          nullable: true
+        next_cursor:
+          type: string
+          nullable: true
+        empty_friends_prompt:
+          type: boolean
+          description: True when friends scope has 0 friends, indicating UI should show invite prompt.
+
+    FriendAddRequest:
+      type: object
+      required:
+        - method
+        - code
+      properties:
+        method:
+          type: string
+          enum: [friend_code]
+        code:
+          type: string
+
+    PurchaseReceiptRequest:
+      type: object
+      required:
+        - sku
+        - transaction_id
+        - signed_transaction
+      properties:
+        sku:
+          type: string
+        transaction_id:
+          type: string
+        signed_transaction:
+          type: string
+        parental_gate_passed:
+          type: boolean
+          default: false
+        parental_gate_token:
+          type: string
+          nullable: true
+
+    PurchaseReceiptResponse:
+      type: object
+      required:
+        - status
+        - entitlement
+      properties:
+        status:
+          type: string
+          enum: [granted, duplicate]
+        entitlement:
+          type: object
+          properties:
+            chips:
+              type: integer
+            cores:
+              type: integer
+            sku:
+              type: string
+
+    PrivacyExportRequest:
+      type: object
+      properties:
+        parental_gate_passed:
+          type: boolean
+          default: false
+        parental_gate_token:
+          type: string
+          nullable: true
+
+    PrivacyExportResponse:
+      type: object
+      required:
+        - tracking_id
+        - status
+      properties:
+        tracking_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: accepted
+        download_url:
+          type: string
+          nullable: true
+        data:
+          type: object
+          description: Direct export payload for testing / immediate download.
+
+    PrivacyDeleteRequest:
+      type: object
+      properties:
+        parental_gate_passed:
+          type: boolean
+          default: false
+        parental_gate_token:
+          type: string
+          nullable: true
+
+    PrivacyDeleteResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: deleted
+
+    LiveOpsConfigResponse:
+      type: object
+      required:
+        - active_districts
+        - feature_flags
+      properties:
+        active_districts:
+          type: array
+          items:
+            type: object
+            required:
+              - district_id
+              - name
+              - active_content_pack_version
+            properties:
+              district_id:
+                type: string
+              name:
+                type: string
+              active_content_pack_version:
+                type: string
+              cdn_url:
+                type: string
+              checksum:
+                type: string
+        feature_flags:
+          type: object
+          additionalProperties:
+            type: boolean
+
+    AppleWebhookRequest:
+      type: object
+      required:
+        - signedPayload
+      properties:
+        signedPayload:
+          type: string
+
+paths:
+  /v1/auth/guest:
+    post:
+      summary: Create or resume guest session
+      operationId: authGuest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthGuestRequest'
+      responses:
+        '200':
+          description: Guest session authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/auth/apple:
+    post:
+      summary: Link or resume via Sign in with Apple
+      operationId: authApple
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthAppleRequest'
+      responses:
+        '200':
+          description: Apple account authenticated / merged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/auth/refresh:
+    post:
+      summary: Exchange refresh token for new access token
+      operationId: authRefresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: New access token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/auth/parental-gate/verify:
+    post:
+      summary: Verify parental gate challenge answer and receive 5-minute gate token
+      operationId: verifyParentalGate
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParentalGateVerifyRequest'
+      responses:
+        '200':
+          description: Parental gate verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentalGateVerifyResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Incorrect answer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/profile:
+    get:
+      summary: Retrieve current authenticated player profile
+      operationId: getProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Player profile data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/runs:
+    post:
+      summary: Submit a completed run
+      operationId: submitRun
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunSubmitRequest'
+      responses:
+        '201':
+          description: Run accepted and scored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunSubmitResponse'
+        '400':
+          description: Validation error / Implausible run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Idempotency conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/runs/{run_id}/redeploy:
+    post:
+      summary: Revive/redeploy runner during a run
+      operationId: redeployRun
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RedeployRequest'
+      responses:
+        '200':
+          description: Redeploy granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RedeployResponse'
+        '402':
+          description: Insufficient Core balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Run already ended or conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/runs/redeploy:
+    post:
+      summary: Revive/redeploy runner during a run (run_id in body)
+      operationId: redeployRunInBody
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RedeployRequest'
+      responses:
+        '200':
+          description: Redeploy granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RedeployResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '402':
+          description: Insufficient Core balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Run already ended or conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/economy/balance:
+    get:
+      summary: Get player current balances
+      operationId: getBalance
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Balances retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EconomyBalanceResponse'
+
+  /v1/economy/ledger:
+    get:
+      summary: Get audit ledger history
+      operationId: getLedger
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Ledger entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerResponse'
+
+  /v1/contracts/active:
+    get:
+      summary: List active daily and weekly contracts
+      operationId: getActiveContracts
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Active contracts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActiveContractsResponse'
+
+  /v1/contracts/{contract_id}/claim:
+    post:
+      summary: Claim contract reward
+      operationId: claimContract
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: contract_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      responses:
+        '200':
+          description: Contract claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimContractResponse'
+        '409':
+          description: Contract not yet completed or already claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/supply-drops/tables/{table_id}:
+    get:
+      summary: Disclose exact odds table for Supply Drop
+      operationId: getSupplyDropTable
+      parameters:
+        - name: table_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Supply drop odds table
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyDropTableResponse'
+
+  /v1/supply-drops/open:
+    post:
+      summary: Open a Supply Drop (earned or purchased)
+      operationId: openSupplyDrop
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplyDropOpenRequest'
+      responses:
+        '200':
+          description: Supply drop outcome resolved and granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplyDropOpenResponse'
+
+  /v1/roster:
+    get:
+      summary: List player runners and boards
+      operationId: getRoster
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Roster items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RosterResponse'
+
+  /v1/roster/equip:
+    post:
+      summary: Equip a runner or board
+      operationId: equipRosterItem
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RosterEquipRequest'
+      responses:
+        '200':
+          description: Equipped item
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /v1/roster/unlock:
+    post:
+      summary: Unlock a runner or board with currency
+      operationId: unlockRosterItem
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RosterUnlockRequest'
+      responses:
+        '200':
+          description: Item unlocked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  balance:
+                    $ref: '#/components/schemas/EconomyBalanceResponse'
+        '402':
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/leaderboard:
+    get:
+      summary: Query District leaderboard
+      operationId: getLeaderboard
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [global, friends]
+            default: global
+        - name: district_id
+          in: query
+          required: false
+          schema:
+            type: string
+            default: neo-marina
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Leaderboard ranking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+
+  /v1/friends/add:
+    post:
+      summary: Add friend via friend code
+      operationId: addFriend
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FriendAddRequest'
+      responses:
+        '201':
+          description: Friend added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '404':
+          description: Friend code not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/purchases/receipt:
+    post:
+      summary: Validate StoreKit 2 receipt and grant entitlement
+      operationId: validatePurchaseReceipt
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseReceiptRequest'
+      responses:
+        '200':
+          description: Receipt validated and entitlement granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseReceiptResponse'
+        '403':
+          description: Age gate / Parental gate required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate transaction already granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Receipt invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/privacy/export:
+    post:
+      summary: Request player data export (GDPR Art. 15)
+      operationId: exportPlayerData
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivacyExportRequest'
+      responses:
+        '202':
+          description: Export request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivacyExportResponse'
+        '403':
+          description: Parental gate required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/privacy/delete:
+    post:
+      summary: Request account and PII deletion (GDPR Art. 17)
+      operationId: deleteAccount
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivacyDeleteRequest'
+      responses:
+        '200':
+          description: Account deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivacyDeleteResponse'
+        '403':
+          description: Parental gate required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/liveops/config:
+    get:
+      summary: Fetch active content pack versions and feature flags
+      operationId: getLiveOpsConfig
+      responses:
+        '200':
+          description: LiveOps configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveOpsConfigResponse'
+
+  /v1/webhooks/apple:
+    post:
+      summary: App Store Server Notifications V2 webhook
+      operationId: handleAppleWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppleWebhookRequest'
+      responses:
+        '200':
+          description: Webhook received and processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean

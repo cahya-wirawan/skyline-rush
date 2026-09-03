@@ -1,100 +1,87 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) and AI coding assistants when working with code in this repository.
 
 ## What this repository is
 
-This repository currently contains **no source code** — only a complete
-"build-ready" product design package under `build-package/` for **Skyline
-Rush**, an original iOS/iPadOS 3-lane endless runner (inspired by, but
-deliberately differentiated from, Subway Surfers). It was produced by the
-`product-blueprint` skill. `build-package/package_manifest.json` confirms
-`"starter_code_included": false` — there is no client or backend project
-scaffolded yet.
+This repository contains the complete implementation of **Phase 0 (Foundations)** and **Phase 1 (Core Loop / Vertical Slice)** for **Skyline Rush**, an original iOS/iPadOS 3-lane endless runner set in Vantage City (deliberately differentiated from reference runners such as *Subway Surfers*), along with the complete design blueprint under `build-package/`.
 
-Do not assume any build/lint/test commands exist. There is nothing to run
-in this repo today; the work here is either (a) extending/correcting the
-design docs, or (b) scaffolding the actual client/backend repos described
-below as a new implementation effort.
+The repository is structured into three decoupled sub-projects per `build-package/16_REPO_STRUCTURE.md`:
 
-## Navigating the design package
+- **`skyline-rush-contracts/`**: OpenAPI 3.0 specification (`openapi.yaml`) and JSON schemas (`schemas/supply-drop-table.schema.json`, `schemas/content-pack.schema.json`) serving as the single source of truth for all network contracts.
+- **`skyline-rush-backend/`**: Node.js / TypeScript microservices monorepo (`gateway`, `profile-auth`, `economy`, `run-integrity`, `leaderboard`, `liveops`, `billing`, `privacy`), PostgreSQL 16 migrations and connection pooling, and Jest acceptance test suite.
+- **`skyline-rush-client/`**: Unity 2022.3 LTS C# project architecture (`Assets/Scripts/Run/`, `ProceduralGen/`, `Storage/`, `Networking/`, `Ads/`, `Meta/`), package manifests, Assembly Definitions (`.asmdef`), simulation test runner, and a playable Web Runner in `web/`.
 
-`build-package/README.md` is the index — every doc cross-links via
-`[[NN_DOC_NAME]]` references (these are relative filename links, not a wiki).
-Read in this order when starting implementation work:
+---
 
-1. `01_PRD.md` and `00_REFERENCE_ANALYSIS.md` — vision, scope, and the
-   originality boundary vs. the reference game (why specific design choices
-   exist, e.g. transparent Supply Drop odds instead of opaque loot boxes).
-2. `16_REPO_STRUCTURE.md` — target repo/module layout (see below).
-3. `14_IMPLEMENTATION_ROADMAP.md` — phase 0–5 plan with exit criteria.
-4. For the Phase 1 vertical slice: `02_UX_SCREEN_SPEC.md`,
-   `03_USER_FLOWS.md`, `05_DATA_MODEL.md`, and `06_API_SPEC.md` together —
-   these are designed to be mutually consistent and consistent with
-   `20_ACCEPTANCE_CRITERIA.md`.
+## Build, Test, and Run Commands
 
-Treat `08_SAFETY_PRIVACY_COMPLIANCE.md` and `09_AUTH_AND_PERMISSIONS.md` as
-binding constraints from Phase 1 onward, not later add-ons — per the docs,
-the server-side age-bucket gate must exist **before** any third-party SDK
-(ads, analytics) is initialized.
-
-Validate the package itself (not application code) with the skill's
-validator:
+### 1. Contracts (`skyline-rush-contracts/`)
 ```bash
-python3 /Users/cahya/.claude/skills/product-blueprint/scripts/validate_package.py \
-  /Users/cahya/Work/MachineLearning/skyline-rush/build-package
+cd skyline-rush-contracts
+npm install
+npm test            # Validates OpenAPI 3.0 spec (24 paths) and all JSON schemas
 ```
 
-## Target architecture (from the design docs, not yet built)
+### 2. Backend (`skyline-rush-backend/`)
+```bash
+cd skyline-rush-backend
+npm install
+npm run build       # TypeScript compilation (tsc) with path aliases (@libs/*)
+npm test            # Runs full acceptance test suite (31 tests in tests/acceptance.spec.ts)
+npm run migrate     # Runs PostgreSQL migrations against DATABASE_URL or POSTGRES_URL
 
-When implementation begins, the docs specify **three separate repositories**
-(`16_REPO_STRUCTURE.md`), not a single monorepo:
+# Start API Gateway & Playable Web Server (Port 3000):
+npx ts-node -r tsconfig-paths/register apps/gateway/main.ts
+```
 
-- **`skyline-rush-client/`** — Unity (C#), IL2CPP, iOS/iPadOS. Key module
-  boundary: the `Run/` (gameplay) module has no network dependency during a
-  run; `Meta/` (Hub/Shop/Roster/Contracts/Leaderboard/Settings) is separate
-  addressable content. Local state lives in SQLite + Keychain, synced via an
-  append-only, idempotency-keyed outbox queue (see `10_OFFLINE_SYNC_AND_STORAGE.md`).
-- **`skyline-rush-backend/`** — NestJS (TypeScript), one deployable service
-  per domain: `gateway` (sole external surface), `profile-auth`, `economy`,
-  `leaderboard`, `liveops`, `billing`, `notification`, `run-integrity`.
-  PostgreSQL is system of record; Redis owns only ephemeral/derived state
-  (leaderboard ZSETs, sessions, rate limits) and is never a durability
-  boundary; ClickHouse holds analytics events, decoupled from operational
-  Postgres.
-- **`skyline-rush-contracts/`** — OpenAPI spec (source of `06_API_SPEC.md`)
-  + shared JSON schemas (e.g. the Supply Drop odds table). Both the client
-  networking layer and the backend's `libs/shared-types` are meant to be
-  generated from this in CI to prevent drift.
+### 3. Client (`skyline-rush-client/`)
+```bash
+cd skyline-rush-client
+npm install
+npm test            # Runs client simulation suite (Core loop, PCG invariant, Outbox, Age gating)
+```
 
-Non-negotiable boundary called out repeatedly across the docs: **the client
-never grants currency or entitlements on its own** — every economy-affecting
-path round-trips through the backend's Economy service, and Billing is the
-sole writer of purchase-backed entitlements (via internal call, never
-client-trusted). Content (`Assets/Content/Districts/<id>/`) is versioned and
-published independently of app binaries through the LiveOps service + CDN.
+---
 
-## Key product decisions that constrain design work
+## Non-Negotiable Architectural Boundaries
 
-These are called out in `01_PRD.md` and `build-package/README.md` as
-deliberate differentiators from the reference game — don't propose designs
-that regress them:
+When modifying or extending this codebase, the following binding constraints must not be violated:
 
-- Supply Drop odds are always disclosed pre-open, identical for earned and
-  purchased opens (no opaque loot boxes).
-- Age-bucket gating of ad SDK behavior and data collection is enforced
-  **server-side**, not just declared in policy.
-- Revive/"Redeploy" cost is capped (max 40 Cores/run) with a guaranteed free
-  daily rewarded-ad path.
-- No chat, UGC, or PvP in MVP (`01_PRD.md` NG1/NG2) — this is intentional
-  scope removal for child-safety/moderation reasons, not a gap to fill in.
-- No generative AI feature anywhere in the product — automation is limited
-  to deterministic procedural content generation and a bounded,
-  human-reviewed dynamic-difficulty tuning loop (`07_AI_OR_AUTOMATION_PIPELINE.md`).
+1. **Server Authority over Economy**:
+   - The client never grants currency, unlocks roster items, or awards entitlements on its own.
+   - Every balance mutation round-trips through `EconomyService` and records append-only rows in `ledger_entry` with a materialized `economy_balance`.
+2. **Server-Side Age-Gating Before Third-Party SDKs**:
+   - Age bucketing (`under_13`, `13_15`, `16_plus`) is derived server-side.
+   - For `under_13` and `13_15` accounts, ad personalization and third-party tracking must remain strictly disabled at both API and client wrapper levels.
+   - Parental gate verification (`POST /v1/auth/parental-gate/verify`) is mandatory for minor purchases and GDPR data deletion/export.
+3. **Strict Idempotency**:
+   - Every mutating request (`POST /v1/runs`, `/runs/redeploy`, `/contracts/:id/claim`, `/supply-drops/open`, `/purchases/receipt`) requires an `Idempotency-Key` header (UUID).
+   - Duplicate submissions must return the original successful response without double-granting currency or rewards.
+4. **Offline Capability & Non-Destructive Reconciliation**:
+   - The run loop is 100% playable offline.
+   - Offline mutations queue in an append-only FIFO outbox (bounded at 500 entries) with monotonic sequence numbers.
+   - Terminal 4xx client errors (400, 402, 403, 404) are routed to dead-letter storage to prevent FIFO queue deadlock.
+5. **Run Integrity Anti-Cheat**:
+   - Speed must not exceed physical plausibility ($v \le 35\text{ m/s}$).
+   - Chip collection density must not exceed $2.5\text{ chips/m}$.
+   - Positive `duration_seconds` is required; implausible runs are flagged as `excluded` and forfeit rewards.
+6. **Transparent Odds & Fairness**:
+   - Supply Drop odds are pre-disclosed and identical for earned and purchased opens.
+   - Monte Carlo empirical testing verifies drop frequencies match published tables within $\pm 1.0\%$.
+7. **Procedural Track Generation Invariant**:
+   - The procedural generator algorithmically proves at least one legal collision-free path through each segment via BFS lookahead.
+   - Mandatory breathing room segments must immediately follow any maximum difficulty segment.
 
-Several product decisions are still explicitly open (`21_RISKS_AND_OPEN_QUESTIONS.md`
-and the manifest's `open_decisions`): Skyline Pass billing model
-(non-renewing vs. subscription), soft-launch market(s), minimum supported
-iOS version/device tier, and whether to add a platform age-signal API beyond
-self-reported birth year. Flag these rather than silently picking one when
-they matter to a task.
+---
+
+## Navigating the Design Package
+
+`build-package/README.md` indexes the 22 design documents:
+- `00_REFERENCE_ANALYSIS.md` & `01_PRD.md`: Core vision, personas, scope, and originality boundaries.
+- `02_UX_SCREEN_SPEC.md` & `03_USER_FLOWS.md`: Screen wireframes and user interaction flows.
+- `05_DATA_MODEL.md` & `06_API_SPEC.md`: Schema models and endpoint specifications.
+- `08_SAFETY_PRIVACY_COMPLIANCE.md` & `09_AUTH_AND_PERMISSIONS.md`: COPPA/GDPR compliance checklist.
+- `10_OFFLINE_SYNC_AND_STORAGE.md`: SQLite and outbox synchronization protocol.
+- `14_IMPLEMENTATION_ROADMAP.md` & `20_ACCEPTANCE_CRITERIA.md`: Phase definitions and acceptance criteria.
+- `report-01.md`: Gauntlet loop audit report and multi-provider verification scorecard.

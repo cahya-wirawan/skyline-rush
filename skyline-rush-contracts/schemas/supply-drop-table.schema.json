@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SupplyDropTable",
+  "description": "Public, transparent odds table for Supply Drop resolution in Skyline Rush",
+  "type": "object",
+  "properties": {
+    "table_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "reward": {
+            "type": "string",
+            "minLength": 1
+          },
+          "probability": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "min_amount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_amount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "item_type": {
+            "type": "string",
+            "enum": ["chips", "cores", "runner", "board", "cosmetic_trail"]
+          }
+        },
+        "required": ["reward", "probability"]
+      }
+    }
+  },
+  "required": ["table_id", "version", "entries"]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "skyline-rush-client",
+  "version": "1.0.0",
+  "description": "Client simulation runner and tests for Skyline Rush",
+  "private": true,
+  "scripts": {
+    "test": "node simulation-runner/run-simulation.js"
+  }
+}

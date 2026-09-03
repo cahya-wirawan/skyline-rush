@@ -1,0 +1,14 @@
+{
+  "name": "skyline-rush-contracts",
+  "version": "1.0.0",
+  "description": "OpenAPI specifications and JSON schemas for Skyline Rush",
+  "private": true,
+  "scripts": {
+    "test": "node test/validate.js"
+  },
+  "devDependencies": {
+    "ajv": "^8.12.0",
+    "ajv-formats": "^3.0.1",
+    "js-yaml": "^4.1.0"
+  }
+}

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Skyline Rush — Playable Vertical Slice</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="game-container">
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas" width="480" height="800"></canvas>
+
+    <!-- UI Overlay (HUD) -->
+    <div id="hud" class="ui-layer" style="display: none;">
+      <div class="hud-top">
+        <div class="hud-stat score-stat">
+          <span class="hud-label">DIST</span>
+          <span id="hudMeters" class="hud-val">0 m</span>
+        </div>
+        <div class="hud-stat chips-stat">
+          <span class="hud-label">CHIPS</span>
+          <span id="hudChips" class="hud-val">0</span>
+        </div>
+        <div class="hud-stat pause-stat">
+          <button id="btnPause" class="icon-btn">⏸</button>
+        </div>
+      </div>
+
+      <!-- PowerUp Timers Bar -->
+      <div id="powerupBar" class="powerup-bar"></div>
+
+      <!-- Virtual Controls for Touch / Mobile -->
+      <div class="touch-controls">
+        <button id="ctrlLeft" class="touch-btn">◀</button>
+        <div class="touch-v-group">
+          <button id="ctrlJump" class="touch-btn">▲</button>
+          <button id="ctrlSlide" class="touch-btn">▼</button>
+        </div>
+        <button id="ctrlRight" class="touch-btn">▶</button>
+      </div>
+    </div>
+
+    <!-- Main Hub Screen (S02) -->
+    <div id="hubScreen" class="ui-layer overlay-screen">
+      <div class="hub-header">
+        <div class="player-pill">
+          <div class="avatar-icon">⚡</div>
+          <div>
+            <div id="hubPlayerName" class="player-name">Runner#...</div>
+            <div id="hubAgeBadge" class="age-badge">16+</div>
+          </div>
+        </div>
+        <div class="currencies-pill">
+          <div class="currency-item">
+            <span class="currency-icon chip-icon">💎</span>
+            <span id="hubChipsVal">0</span>
+          </div>
+          <div class="currency-item">
+            <span class="currency-icon core-icon">🔷</span>
+            <span id="hubCoresVal">0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hub-brand">
+        <h1 class="game-title">SKYLINE<br><span class="highlight">RUSH</span></h1>
+        <p class="subtitle">Vantage City Rooftop Courier</p>
+      </div>
+
+      <div class="hub-character-preview">
+        <div class="grav-board-glow"></div>
+        <div class="character-card">
+          <span class="equipped-tag">EQUIPPED</span>
+          <h3 id="hubRunnerName">VEX</h3>
+          <p id="hubBoardName">Grav-Board: Ion Glide</p>
+        </div>
+      </div>
+
+      <div class="hub-actions">
+        <button id="btnPlay" class="btn btn-primary pulse-btn">
+          <span class="btn-icon">▶</span> RUN VANTAGE CITY
+        </button>
+        <div class="hub-sub-buttons">
+          <button id="btnLeaderboard" class="btn btn-secondary">🏆 Ranks</button>
+          <button id="btnSupplyDrop" class="btn btn-secondary">📦 Drops</button>
+          <button id="btnContracts" class="btn btn-secondary">📜 Contracts</button>
+        </div>
+      </div>
+
+      <div class="controls-hint">
+        <span>Controls: <b>A / D / ◀ ▶</b> Lane Switch &bull; <b>W / ▲ / Space</b> Jump &bull; <b>S / ▼</b> Slide / Fast-Fall</span>
+      </div>
+    </div>
+
+    <!-- Redeploy Modal (S09) -->
+    <div id="redeployModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header alert-header">
+          <h2>AUTHORITY INTERCEPTED!</h2>
+          <p>Courier grav-board crashed. Redeploy to keep your streak?</p>
+        </div>
+        <div class="redeploy-options">
+          <button id="btnAdRedeploy" class="btn btn-free">
+            <span class="btn-label">AD REDEPLOY</span>
+            <span class="btn-subtext">FREE (1 per run)</span>
+          </button>
+          <button id="btnCoreRedeploy" class="btn btn-accent">
+            <span class="btn-label">CORES REDEPLOY</span>
+            <span id="coreRedeployCost" class="btn-subtext">Cost: 10 Cores</span>
+          </button>
+        </div>
+        <button id="btnGiveUp" class="btn btn-ghost">CONCLUDE RUN</button>
+      </div>
+    </div>
+
+    <!-- Run Summary Modal (S10) -->
+    <div id="summaryModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card">
+        <h2 class="summary-title">RUN SUMMARY</h2>
+        <div class="summary-stats">
+          <div class="stat-row">
+            <span class="stat-label">Distance Cleared</span>
+            <span id="summaryMeters" class="stat-val">0 m</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Chips Collected</span>
+            <span id="summaryChips" class="stat-val highlight">+0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Pass XP Earned</span>
+            <span id="summaryXp" class="stat-val">+0 XP</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Run Integrity</span>
+            <span id="summaryIntegrity" class="stat-val badge-ok">VERIFIED (OK)</span>
+          </div>
+        </div>
+        <div class="summary-actions">
+          <button id="btnSummaryPlayAgain" class="btn btn-primary">RUN AGAIN</button>
+          <button id="btnSummaryHub" class="btn btn-secondary">RETURN TO HUB</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leaderboard Modal -->
+    <div id="leaderboardModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h2>GLOBAL LEADERBOARD</h2>
+          <button id="btnCloseLeaderboard" class="icon-close">✕</button>
+        </div>
+        <div id="leaderboardList" class="leaderboard-container">
+          <div class="loading-msg">Fetching rankings from Redis...</div>
+        </div>
+        <div id="selfRankBar" class="self-rank-bar">
+          <span>Your Best: <b>0 m</b> (Rank: -)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Supply Drops Modal -->
+    <div id="supplyDropModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>TRANSPARENT SUPPLY DROPS</h2>
+          <button id="btnCloseSupplyDrop" class="icon-close">✕</button>
+        </div>
+        <p class="drop-disclaimer">Pre-disclosed immutable odds table (standard-v7). No hidden probabilities.</p>
+        <div id="oddsTableList" class="odds-list"></div>
+        <div class="drop-actions">
+          <button id="btnOpenEarnedDrop" class="btn btn-primary">OPEN EARNED DROP (FREE)</button>
+        </div>
+        <div id="dropResultBox" class="drop-result" style="display: none;"></div>
+      </div>
+    </div>
+
+    <!-- Daily Contracts Modal -->
+    <div id="contractsModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>DAILY CONTRACTS</h2>
+          <button id="btnCloseContracts" class="icon-close">✕</button>
+        </div>
+        <div id="contractsList" class="contracts-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js?v=2.0.0"></script>
+</body>
+</html>
