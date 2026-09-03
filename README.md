@@ -2,21 +2,22 @@
 
 **Skyline Rush** is an original iOS/iPadOS 3-lane endless runner set in the near-future skyline of Vantage City. Couriers race grav-boards across rooftops, dodging automated Skyline Authority drones, collecting Energy Chips, and competing on global leaderboards.
 
-Deliberately differentiated from reference runners (e.g. *Subway Surfers*), Skyline Rush features pre-disclosed transparent Supply Drop odds, server-enforced child privacy protection (COPPA / GDPR-K), capped Redeploy revive costs, and an append-only server-authoritative economy ledger.
+Deliberately differentiated from reference runners (e.g. *Subway Surfers*), Skyline Rush features pre-disclosed transparent Supply Drop odds, server-enforced child privacy protection (COPPA / GDPR-K), capped Redeploy revive costs, an append-only server-authoritative economy ledger, and a high-performance procedural cyberpunk aesthetic.
 
 ---
 
 ## Repository Status
 
-**Phase 0 (Foundations)** and **Phase 1 (Core Loop & Vertical Slice)** are fully implemented and verified via an adversarial Multi-Provider Gauntlet Loop (see [`report-01.md`](report-01.md)).
+**Phase 0 (Foundations)**, **Phase 1 (Core Loop & Vertical Slice)**, and **Options A, B, and C (Full Meta UI, Production Cloud Infrastructure, and Procedural Visuals/Audio)** are fully implemented and verified via an adversarial Multi-Provider Gauntlet Loop (see [`report-01.md`](report-01.md), Final Score: **0.978 / 1.000**).
 
 ```
 skyline-rush/
 ├── build-package/             # Complete build-ready product blueprint (PRD, UX specs, test plans)
-├── skyline-rush-contracts/    # OpenAPI 3.0.3 spec, JSON schemas, automated validator
-├── skyline-rush-backend/      # Express/NestJS microservices monorepo, PostgreSQL & Redis configs, acceptance tests
-├── skyline-rush-client/       # Unity 2022.3 LTS scaffolding, C# run engine, and playable Web Runner
-└── report-01.md               # Multi-Provider Gauntlet execution report (PASS, Score: 0.970)
+├── skyline-rush-contracts/    # OpenAPI 3.0.3 spec (25 paths), JSON schemas, automated validator
+├── skyline-rush-backend/      # Express/NestJS microservices monorepo, PostgreSQL & Redis configs, 
+│                              # Docker Compose prod, K8s manifests (k8s/), Prometheus metrics (/metrics)
+├── skyline-rush-client/       # Unity 2022.3 LTS scaffolding, C# run engine, and playable Web Runner (web/)
+└── report-01.md               # Unified Gauntlet execution report (PASS, Final Score: 0.978)
 ```
 
 ---
@@ -42,26 +43,41 @@ Open **[http://localhost:3000](http://localhost:3000)** in any modern web browse
 | **Jump** | <kbd>W</kbd> / <kbd>↑</kbd> / <kbd>Space</kbd> (or Swipe Up) |
 | **Slide / Fast-Fall** | <kbd>S</kbd> / <kbd>↓</kbd> (or Swipe Down) |
 
+#### Interactive Features in the Playable Client
+- **S02 Main Hub**: Real-time balance pills, equipped Courier/Board preview, and quick launcher.
+- **S03 Active Run**: 3-lane rooftop race with parallax skyline hover-traffic, overhead sky-bridges, animated neon billboards, industrial ventilation fans, and dynamic particle systems (slide sparks, thruster plume, coin sparkles).
+- **Dynamic Web Audio Synthesizer**: Procedural 4-bar cyber bassline loop (125–165 BPM synced to speed), 16th-note Boost arpeggiator, Doppler near-miss whoosh sound effects, and DSP low-pass filter (sweeping cutoff to 380 Hz on modals/pause).
+- **S04 Shop**: Cores crates (50, 120, 260, 600, 1400 Cores), Supply Drops, and Daily Specials (`starter_pack`, `remove_interstitials`).
+- **S04A Parental Gate**: Accessible numeric PIN pad and server-signed arithmetic challenge verification required for minor purchases and GDPR actions.
+- **S05 Roster & Customization**: Courier (Vex, Kael, Aria) and Grav-Board (Ion Glide, Pulse Ray, Vortex Breaker) selection carousel with atomic Cores unlocks.
+- **S06 Contracts**: Dedicated daily and weekly courier missions screen with real-time objective tracking and idempotent reward claiming.
+- **S08 Settings & GDPR**: SFX/Music volume sliders, Friend Code sharing/addition, GDPR Article 15 JSON Data Export, and GDPR Article 17 Account Deletion.
+- **S09 Redeploy Revive Modal**: Free daily ad revive or Cores revive ($10 \rightarrow 20 \rightarrow 40$ escalation) with balance shortfall protection.
+- **S10 Run Summary**: Distance cleared, chips collected, pass XP earned, and anti-cheat verification badge.
+
 ---
 
 ## Architecture Overview
 
 ### 1. `skyline-rush-contracts/`
 Single source of truth for all API definitions and content schemas:
-- `openapi.yaml`: OpenAPI 3.0 specification covering 24 paths / 22 endpoints (`/auth/guest`, `/auth/apple`, `/auth/refresh`, `/auth/parental-gate/verify`, `/profile`, `/runs`, `/runs/redeploy`, `/economy/balance`, `/economy/ledger`, `/contracts/active`, `/contracts/{id}/claim`, `/supply-drops/*`, `/roster/*`, `/leaderboard`, `/friends/add`, `/purchases/receipt`, `/privacy/*`, `/liveops/config`, `/webhooks/apple`).
+- `openapi.yaml`: OpenAPI 3.0 specification covering 25 paths / 23 endpoints (`/auth/guest`, `/auth/apple`, `/auth/refresh`, `/auth/parental-gate/challenge`, `/auth/parental-gate/verify`, `/profile`, `/runs`, `/runs/redeploy`, `/economy/balance`, `/economy/ledger`, `/contracts/active`, `/contracts/{id}/claim`, `/supply-drops/*`, `/roster`, `/roster/unlock`, `/roster/equip`, `/leaderboard`, `/friends/add`, `/purchases/receipt`, `/privacy/export`, `/privacy/data-export`, `/privacy/delete`, `/privacy/delete-account`, `/liveops/config`, `/webhooks/apple`).
 - `schemas/supply-drop-table.schema.json`: JSON schema enforcing transparent odds distributions summing to 1.0.
 - `schemas/content-pack.schema.json`: District remote content pack manifest schema with SHA-256 checksums.
 
 ### 2. `skyline-rush-backend/`
 TypeScript / Express / NestJS microservices monorepo:
-- **`apps/gateway`**: Reverse proxy, rate limiting, error envelope formatting, CORS, and web client static hosting.
-- **`apps/profile-auth`**: Zero-PII guest identity, Apple linking with guest progress merge, token refresh, and parental gate verification (`POST /v1/auth/parental-gate/verify`).
-- **`apps/economy`**: Append-only ledger (`ledger_entry`), materialized balances (`economy_balance`), idempotency enforcement, Redeploy cost escalation ($10 \rightarrow 20 \rightarrow 40$ Cores cap, 1 free ad revive), Supply Drop resolver against published odds (`standard-v7`).
+- **`apps/gateway`**: Reverse proxy, rate limiting, Prometheus metrics exposition (`/metrics` with route cardinality protection), shallow/deep health checks (`/health/live`, `/health/ready` with 2s anti-DoS cache), CORS, and static web client hosting.
+- **`apps/profile-auth`**: Zero-PII guest identity, Apple linking with guest progress merge, token refresh, and server-signed parental gate challenges with 5-minute JWT verification tokens.
+- **`apps/economy`**: Append-only ledger (`ledger_entry`), materialized balances (`economy_balance`), atomic row-locked unlocks (`unlockItemAtomic`), idempotent contract claims (`WHERE claimed_at IS NULL`), Redeploy cost escalation ($10 \rightarrow 20 \rightarrow 40$ Cores cap, 1 free ad revive), and Supply Drop resolver against published odds (`standard-v7`).
 - **`apps/run-integrity`**: Anti-cheat plausibility checks enforcing velocity limits ($v \le 35\text{ m/s}$) and chip collection density ($\le 2.5\text{ chips/m}$), requiring positive durations.
 - **`apps/leaderboard`**: Redis ZSET leaderboard logic, self-rank calculation, and strict filtering for `integrity_flag = 'ok'`.
-- **`apps/billing`**: StoreKit 2 receipt validation, duplicate grant prevention on `platform_transaction_id`, and Apple Server Notifications V2 webhook handler.
+- **`apps/billing`**: StoreKit 2 receipt validation covering all 7 catalog SKUs, duplicate grant prevention, and Apple Server Notifications V2 webhook handler.
 - **`apps/privacy`**: GDPR Article 15 export and Article 17 deletion with server-enforced parental gate tokens for minors.
 - **`libs/db`**: PostgreSQL 16 migration (`001_initial_schema.sql`), migration runner (`migrate.ts`), connection pool with row locks (`postgres-db.ts`), and in-memory test engine (`in-memory-db.ts`).
+- **Production Orchestration**:
+  - `docker-compose.prod.yml`: PostgreSQL 16, Redis 7 (with password auth), Backend Gateway, and Nginx reverse proxy with SSL termination on port 443.
+  - `k8s/`: Complete 10-manifest suite (`namespace`, `configmap`, `secrets`, `migration-job`, `postgres-statefulset`, `redis-deployment`, `backend-deployment`, `backend-service`, `hpa`, `ingress`) with non-root security contexts (UID 1000) and dropped capabilities.
 
 ### 3. `skyline-rush-client/`
 Client engine targeting Unity 2022.3 LTS (iOS/iPadOS) and interactive web:
@@ -70,20 +86,20 @@ Client engine targeting Unity 2022.3 LTS (iOS/iPadOS) and interactive web:
 - **`Assets/Scripts/ProceduralGen/`**: Seeded deterministic track generator with BFS survivable path invariant and mandatory breathing room after maximum difficulty segments.
 - **`Assets/Scripts/Storage/`**: Persistent `SQLiteStorageLayer.cs` and `KeychainWrapper.cs`, bounded 500-entry FIFO outbox queue with terminal 4xx dead-lettering, and non-destructive server balance reconciliation.
 - **`Assets/Scripts/Ads/` & `Analytics/`**: Server-enforced age-bucket gating suppressing IDFA and tracking for minor accounts.
-- **`web/`**: Full interactive 3D canvas runner connected to the live backend API Gateway.
+- **`web/`**: Full interactive 3D canvas runner with procedural props, particle systems, dynamic Web Audio synth engine, and complete Phase 2 UI screens.
 
 ---
 
 ## Running Tests
 
-All components have automated test suites verifying Acceptance Criteria AC-01 through AC-18:
+All components have automated test suites verifying Acceptance Criteria AC-01 through AC-18 and Options A, B, and C:
 
 ```bash
 # 1. Validate Contracts & JSON Schemas (AC-01, AC-02)
 cd skyline-rush-contracts
 npm test
 
-# 2. Run Backend Acceptance Test Suite (AC-01..AC-12, AC-17, AC-18)
+# 2. Run Backend Acceptance Test Suite (37 tests across AC-01..12, 17, 18, Options A & B)
 cd ../skyline-rush-backend
 npm test
 
@@ -103,3 +119,4 @@ The full product design package produced by the `product-blueprint` skill is loc
 - [`08_SAFETY_PRIVACY_COMPLIANCE.md`](build-package/08_SAFETY_PRIVACY_COMPLIANCE.md) & [`09_AUTH_AND_PERMISSIONS.md`](build-package/09_AUTH_AND_PERMISSIONS.md) — COPPA/GDPR child privacy and auth architecture.
 - [`10_OFFLINE_SYNC_AND_STORAGE.md`](build-package/10_OFFLINE_SYNC_AND_STORAGE.md) — Offline outbox sync and reconciliation.
 - [`14_IMPLEMENTATION_ROADMAP.md`](build-package/14_IMPLEMENTATION_ROADMAP.md) & [`20_ACCEPTANCE_CRITERIA.md`](build-package/20_ACCEPTANCE_CRITERIA.md) — Phased roadmap and Given/When/Then acceptance criteria.
+- [`report-01.md`](report-01.md) — Unified Gauntlet execution report covering Phase 0/1 and Options A, B, and C.
