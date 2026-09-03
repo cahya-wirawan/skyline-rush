@@ -1,6 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
+import Redis from 'ioredis';
+import { v4 as uuidv4 } from 'uuid';
 import { AuthService } from '@libs/auth';
 import { ProfileAuthService } from '../profile-auth/profile-auth.service';
 import { EconomyService } from '../economy/economy.service';
@@ -22,11 +24,123 @@ export function createGatewayApp(dbInstance?: IDatabase): express.Express {
   const app = express();
   // CRIT-16: Enable trust proxy for reverse proxy deployments
   app.set('trust proxy', 1);
-  app.use(cors());
   app.use(express.json());
+  app.use(cors());
+
+  // CRIT-B3: Optional Redis client when REDIS_URL is provided
+  let redisClient: Redis | null = null;
+  if (process.env.REDIS_URL && process.env.NODE_ENV !== 'test') {
+    try {
+      redisClient = new Redis(process.env.REDIS_URL, {
+        lazyConnect: true,
+        enableOfflineQueue: false,
+        maxRetriesPerRequest: 1
+      });
+      redisClient.connect().catch(err => {
+        console.warn('Redis connection failed:', err.message);
+      });
+    } catch (e: any) {
+      console.warn('Redis init error:', e.message);
+    }
+  }
+
+  // Metrics collection state
+  let skylineActiveRunsTotal = 0;
+  let skylineRedeployConversionsTotal = 0;
+  let skylineFraudDroppedRunsTotal = 0;
+  const httpRequestsTotal = new Map<string, number>();
+  const requestDurations: number[] = [];
+
+  // Structured JSON logging & metrics middleware
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      requestDurations.push(duration);
+      if (requestDurations.length > 1000) requestDurations.shift();
+
+      // RED-210: Guard against metric cardinality explosion by using "unmatched" for unrouted paths
+      const routePath = req.route?.path ? req.route.path : 'unmatched';
+      const routeKey = `${req.method}_${routePath}_${res.statusCode}`;
+      httpRequestsTotal.set(routeKey, (httpRequestsTotal.get(routeKey) || 0) + 1);
+
+      if (process.env.NODE_ENV !== 'test') {
+        console.log(JSON.stringify({
+          timestamp: new Date().toISOString(),
+          method: req.method,
+          path: req.originalUrl || req.url,
+          status: res.statusCode,
+          duration_ms: duration,
+          client_ip: req.ip
+        }));
+      }
+    });
+    next();
+  });
 
   app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'skyline-rush-gateway', timestamp: new Date().toISOString() });
+  });
+
+  app.get('/health/live', (req, res) => {
+    res.status(200).json({ status: 'ok', uptime: process.uptime(), service: 'skyline-rush-gateway' });
+  });
+
+  // CRIT-B2, RED-211: Execute database query and cache readiness result for 2 seconds
+  let lastReadinessCheck: { status: number; body: any; timestamp: number } | null = null;
+  app.get('/health/ready', async (req, res) => {
+    const now = Date.now();
+    if (lastReadinessCheck && (now - lastReadinessCheck.timestamp < 2000)) {
+      return res.status(lastReadinessCheck.status).json(lastReadinessCheck.body);
+    }
+
+    try {
+      const table = await db.getSupplyDropTable('standard-v7');
+      if (!table) {
+        const body = { status: 'not_ready', checks: { database: 'down', cache: 'down' } };
+        lastReadinessCheck = { status: 503, body, timestamp: now };
+        return res.status(503).json(body);
+      }
+
+      let cacheStatus = 'up';
+      if (redisClient) {
+        try {
+          await redisClient.ping();
+        } catch {
+          cacheStatus = 'down';
+        }
+      }
+
+      const body = {
+        status: cacheStatus === 'up' ? 'ready' : 'degraded',
+        checks: { database: 'up', cache: cacheStatus },
+        uptime: process.uptime()
+      };
+      lastReadinessCheck = { status: 200, body, timestamp: now };
+      res.status(200).json(body);
+    } catch (err: any) {
+      const body = { status: 'not_ready', error: err.message, checks: { database: 'down', cache: 'down' } };
+      lastReadinessCheck = { status: 503, body, timestamp: now };
+      res.status(503).json(body);
+    }
+  });
+
+  app.get('/metrics', (req, res) => {
+    res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    let body = '# HELP http_requests_total Total number of HTTP requests\n# TYPE http_requests_total counter\n';
+    for (const [key, count] of httpRequestsTotal.entries()) {
+      const parts = key.split('_');
+      const method = parts[0];
+      const status = parts[parts.length - 1];
+      const path = parts.slice(1, -1).join('_');
+      body += `http_requests_total{method="${method}",path="${path}",status="${status}"} ${count}\n`;
+    }
+    const avgDuration = requestDurations.length > 0 ? (requestDurations.reduce((a, b) => a + b, 0) / requestDurations.length / 1000) : 0;
+    body += `\n# HELP http_request_duration_seconds Average HTTP request duration in seconds\n# TYPE http_request_duration_seconds gauge\nhttp_request_duration_seconds ${avgDuration.toFixed(4)}\n`;
+    body += `\n# HELP skyline_active_runs_total Total active runs submitted\n# TYPE skyline_active_runs_total counter\nskyline_active_runs_total ${skylineActiveRunsTotal}\n`;
+    body += `\n# HELP skyline_redeploy_conversions_total Total redeploy actions executed\n# TYPE skyline_redeploy_conversions_total counter\nskyline_redeploy_conversions_total ${skylineRedeployConversionsTotal}\n`;
+    body += `\n# HELP skyline_fraud_dropped_runs_total Total runs dropped or excluded by anti-cheat\n# TYPE skyline_fraud_dropped_runs_total counter\nskyline_fraud_dropped_runs_total ${skylineFraudDroppedRunsTotal}\n`;
+    res.send(body);
   });
 
   const webDir = path.resolve(__dirname, '../../../skyline-rush-client/web');
@@ -168,7 +282,13 @@ export function createGatewayApp(dbInstance?: IDatabase): express.Express {
     } catch (err) { next(err); }
   });
 
-  // CRIT-04: Parental Gate verification endpoint
+  // CRIT-A1: Parental Gate challenge endpoint (does not leak solution or operands)
+  app.get('/v1/auth/parental-gate/challenge', rateLimiter(30, 'auth'), (req, res) => {
+    const challenge = profileService.createParentalGateChallenge();
+    res.json(challenge);
+  });
+
+  // CRIT-A1: Parental Gate verification endpoint
   app.post('/v1/auth/parental-gate/verify', requireAuth, rateLimiter(30, 'auth'), async (req: AuthenticatedRequest, res, next) => {
     try {
       const result = await profileService.verifyParentalGate(req.user!.player_id, req.body);
@@ -186,8 +306,12 @@ export function createGatewayApp(dbInstance?: IDatabase): express.Express {
   // --- Run Routes ---
   app.post('/v1/runs', requireAuth, requireIdempotencyKey, rateLimiter(60, 'general'), async (req: AuthenticatedRequest, res, next) => {
     try {
+      skylineActiveRunsTotal++;
       const idempotencyKey = req.header('Idempotency-Key')!;
       const result = await runService.submitRun(req.user!.player_id, req.body, idempotencyKey);
+      if (result.integrity_flag === 'excluded') {
+        skylineFraudDroppedRunsTotal++;
+      }
       res.status(201).json(result);
     } catch (err) { next(err); }
   });
@@ -195,6 +319,7 @@ export function createGatewayApp(dbInstance?: IDatabase): express.Express {
   // CRIT-03: Redeploy with run_id in request body
   app.post('/v1/runs/redeploy', requireAuth, requireIdempotencyKey, rateLimiter(60, 'general'), async (req: AuthenticatedRequest, res, next) => {
     try {
+      skylineRedeployConversionsTotal++;
       const idempotencyKey = req.header('Idempotency-Key')!;
       const { run_id, method, ad_receipt } = req.body;
       const result = await economyService.redeploy(req.user!.player_id, run_id, method, ad_receipt, idempotencyKey);
@@ -205,6 +330,7 @@ export function createGatewayApp(dbInstance?: IDatabase): express.Express {
   // CRIT-03: Redeploy with run_id in path parameter
   app.post('/v1/runs/:run_id/redeploy', requireAuth, requireIdempotencyKey, rateLimiter(60, 'general'), async (req: AuthenticatedRequest, res, next) => {
     try {
+      skylineRedeployConversionsTotal++;
       const idempotencyKey = req.header('Idempotency-Key')!;
       const { method, ad_receipt } = req.body;
       const result = await economyService.redeploy(req.user!.player_id, req.params.run_id, method, ad_receipt, idempotencyKey);
@@ -326,7 +452,23 @@ export function createGatewayApp(dbInstance?: IDatabase): express.Express {
     } catch (err) { next(err); }
   });
 
+  app.post('/v1/privacy/data-export', requireAuth, rateLimiter(10, 'privacy'), async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const { parental_gate_token } = req.body || {};
+      const result = await privacyService.exportData(req.user!.player_id, parental_gate_token);
+      res.status(202).json(result);
+    } catch (err) { next(err); }
+  });
+
   app.post('/v1/privacy/delete', requireAuth, rateLimiter(10, 'privacy'), async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const { parental_gate_token } = req.body || {};
+      const result = await privacyService.deleteData(req.user!.player_id, parental_gate_token);
+      res.json(result);
+    } catch (err) { next(err); }
+  });
+
+  app.post('/v1/privacy/delete-account', requireAuth, rateLimiter(10, 'privacy'), async (req: AuthenticatedRequest, res, next) => {
     try {
       const { parental_gate_token } = req.body || {};
       const result = await privacyService.deleteData(req.user!.player_id, parental_gate_token);

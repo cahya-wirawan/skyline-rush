@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS contract_progress (
   progress INTEGER NOT NULL DEFAULT 0 CHECK (progress >= 0),
   completed_at TIMESTAMPTZ,
   claimed_at TIMESTAMPTZ,
+  claim_idempotency_key TEXT,
   PRIMARY KEY (player_id, contract_id)
 );
 

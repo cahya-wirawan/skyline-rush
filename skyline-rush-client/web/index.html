@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Skyline Rush — Playable Vertical Slice</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2.1.0">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
@@ -26,7 +26,7 @@
           <span id="hudChips" class="hud-val">0</span>
         </div>
         <div class="hud-stat pause-stat">
-          <button id="btnPause" class="icon-btn">⏸</button>
+          <button id="btnPause" class="icon-btn" aria-label="Pause Game">⏸</button>
         </div>
       </div>
 
@@ -35,12 +35,12 @@
 
       <!-- Virtual Controls for Touch / Mobile -->
       <div class="touch-controls">
-        <button id="ctrlLeft" class="touch-btn">◀</button>
+        <button id="ctrlLeft" class="touch-btn" aria-label="Move Left">◀</button>
         <div class="touch-v-group">
-          <button id="ctrlJump" class="touch-btn">▲</button>
-          <button id="ctrlSlide" class="touch-btn">▼</button>
+          <button id="ctrlJump" class="touch-btn" aria-label="Jump">▲</button>
+          <button id="ctrlSlide" class="touch-btn" aria-label="Slide">▼</button>
         </div>
-        <button id="ctrlRight" class="touch-btn">▶</button>
+        <button id="ctrlRight" class="touch-btn" aria-label="Move Right">▶</button>
       </div>
     </div>
 
@@ -63,6 +63,7 @@
             <span class="currency-icon core-icon">🔷</span>
             <span id="hubCoresVal">0</span>
           </div>
+          <button id="btnHubSettings" class="icon-btn-settings" aria-label="Open Settings">⚙️</button>
         </div>
       </div>
 
@@ -85,14 +86,233 @@
           <span class="btn-icon">▶</span> RUN VANTAGE CITY
         </button>
         <div class="hub-sub-buttons">
+          <button id="btnShop" class="btn btn-secondary">🛒 Shop</button>
+          <button id="btnRoster" class="btn btn-secondary">⚡ Roster</button>
+          <button id="btnContracts" class="btn btn-secondary">📜 Contracts</button>
           <button id="btnLeaderboard" class="btn btn-secondary">🏆 Ranks</button>
           <button id="btnSupplyDrop" class="btn btn-secondary">📦 Drops</button>
-          <button id="btnContracts" class="btn btn-secondary">📜 Contracts</button>
         </div>
       </div>
 
       <div class="controls-hint">
         <span>Controls: <b>A / D / ◀ ▶</b> Lane Switch &bull; <b>W / ▲ / Space</b> Jump &bull; <b>S / ▼</b> Slide / Fast-Fall</span>
+      </div>
+    </div>
+
+    <!-- S04 Shop Modal -->
+    <div id="shopModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h2>CORONA BLACK MARKET // SHOP</h2>
+          <button id="btnCloseShop" class="icon-close" aria-label="Close Shop">✕</button>
+        </div>
+        <div class="shop-content">
+          <!-- Daily Specials -->
+          <div class="shop-section">
+            <h3 class="shop-section-title">DAILY SPECIALS</h3>
+            <div class="specials-grid">
+              <div class="shop-card special-card">
+                <span class="card-badge badge-value">BEST VALUE</span>
+                <h4>STARTER BUNDLE</h4>
+                <p class="card-desc">10,000 Chips + 50 Cores + Neon Trail</p>
+                <div class="card-price">$0.99</div>
+                <button class="btn btn-primary btn-sm" onclick="window.game.buyPack('starter_pack', 50, 0.99)">ACQUIRE</button>
+              </div>
+              <div class="shop-card special-card">
+                <span class="card-badge badge-popular">PERMANENT</span>
+                <h4>AD SUPPRESSION</h4>
+                <p class="card-desc">Removes all interstitial video ads forever</p>
+                <div class="card-price">$4.99</div>
+                <button class="btn btn-accent btn-sm" onclick="window.game.buyPack('remove_interstitials', 0, 4.99)">REMOVE ADS</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cores Packs -->
+          <div class="shop-section">
+            <h3 class="shop-section-title">CORES SUPPLY CRATES</h3>
+            <div class="packs-grid">
+              <div class="shop-card">
+                <h4>50 CORES</h4>
+                <div class="core-amount">🔷 50</div>
+                <div class="card-price">$0.99</div>
+                <button class="btn btn-secondary btn-sm" onclick="window.game.buyPack('cores_small', 50, 0.99)">BUY</button>
+              </div>
+              <div class="shop-card highlighted-card">
+                <span class="card-badge badge-popular">POPULAR</span>
+                <h4>120 CORES</h4>
+                <div class="core-amount">🔷 120</div>
+                <div class="card-price">$1.99</div>
+                <button class="btn btn-primary btn-sm" onclick="window.game.buyPack('cores_medium', 120, 1.99)">BUY</button>
+              </div>
+              <div class="shop-card">
+                <h4>260 CORES</h4>
+                <div class="core-amount">🔷 260</div>
+                <div class="card-price">$4.99</div>
+                <button class="btn btn-secondary btn-sm" onclick="window.game.buyPack('cores_large', 260, 4.99)">BUY</button>
+              </div>
+              <div class="shop-card highlighted-card">
+                <span class="card-badge badge-value">BEST VALUE</span>
+                <h4>600 CORES</h4>
+                <div class="core-amount">🔷 600</div>
+                <div class="card-price">$9.99</div>
+                <button class="btn btn-primary btn-sm" onclick="window.game.buyPack('cores_xl', 600, 9.99)">BUY</button>
+              </div>
+              <div class="shop-card">
+                <h4>1,400 CORES</h4>
+                <div class="core-amount">🔷 1400</div>
+                <div class="card-price">$19.99</div>
+                <button class="btn btn-secondary btn-sm" onclick="window.game.buyPack('cores_vault', 1400, 19.99)">BUY</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S04A Parental Gate Challenge Modal -->
+    <div id="parentalGateModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card modal-parental">
+        <div class="modal-header alert-header">
+          <h2>PARENTAL VERIFICATION</h2>
+          <button id="btnCloseParentalGate" class="icon-close" aria-label="Cancel Parental Gate">✕</button>
+        </div>
+        <p class="parental-notice">
+          Accounts under 13 require parental confirmation before purchases or privacy actions. Solve the challenge below to proceed.
+        </p>
+
+        <div class="challenge-box">
+          <span class="challenge-label">ADULT SECURITY CHALLENGE:</span>
+          <div id="parentalChallengeText" class="challenge-math" aria-live="polite">Loading challenge...</div>
+          <div id="parentalInputDisplay" class="challenge-input-display">_</div>
+        </div>
+
+        <!-- Accessible PIN Keypad -->
+        <div class="pin-keypad" role="group" aria-label="Numeric PIN Pad">
+          <button class="pin-key" data-digit="1" aria-label="1">1</button>
+          <button class="pin-key" data-digit="2" aria-label="2">2</button>
+          <button class="pin-key" data-digit="3" aria-label="3">3</button>
+          <button class="pin-key" data-digit="4" aria-label="4">4</button>
+          <button class="pin-key" data-digit="5" aria-label="5">5</button>
+          <button class="pin-key" data-digit="6" aria-label="6">6</button>
+          <button class="pin-key" data-digit="7" aria-label="7">7</button>
+          <button class="pin-key" data-digit="8" aria-label="8">8</button>
+          <button class="pin-key" data-digit="9" aria-label="9">9</button>
+          <button class="pin-key pin-key-clear" id="btnPinClear" aria-label="Clear">CLR</button>
+          <button class="pin-key" data-digit="0" aria-label="0">0</button>
+          <button class="pin-key pin-key-enter" id="btnPinSubmit" aria-label="Submit Answer">ENTER</button>
+        </div>
+        <div id="parentalGateError" class="error-msg" style="display: none;"></div>
+      </div>
+    </div>
+
+    <!-- S05 Roster & Customization Modal -->
+    <div id="rosterModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h2>COURIER ROSTER // TECH</h2>
+          <button id="btnCloseRoster" class="icon-close" aria-label="Close Roster">✕</button>
+        </div>
+        <div class="roster-tabs">
+          <button id="tabRunners" class="tab-btn active">COURIERS</button>
+          <button id="tabBoards" class="tab-btn">GRAV-BOARDS</button>
+        </div>
+        <div id="rosterCardsContainer" class="roster-grid">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </div>
+
+    <!-- S06 Daily Contracts Modal -->
+    <div id="contractsModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h2>DAILY CONTRACTS & HEISTS</h2>
+          <button id="btnCloseContracts" class="icon-close" aria-label="Close Contracts">✕</button>
+        </div>
+        <p class="contracts-subtitle">Resetting every 24 hours. Objectives update in real time.</p>
+        <div id="contractsList" class="contracts-list"></div>
+      </div>
+    </div>
+
+    <!-- S08 Settings & Privacy Modal -->
+    <div id="settingsModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h2>SYSTEM SETTINGS & PRIVACY</h2>
+          <button id="btnCloseSettings" class="icon-close" aria-label="Close Settings">✕</button>
+        </div>
+        <div class="settings-content">
+          <!-- Audio -->
+          <div class="settings-section">
+            <h3 class="settings-title">AUDIO DRIVERS</h3>
+            <div class="setting-row">
+              <label for="sliderSfx">SFX Volume</label>
+              <div class="slider-container">
+                <input type="range" id="sliderSfx" min="0" max="100" value="80">
+                <span id="valSfx">80%</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label for="sliderMusic">Synth Bassline & Arp</label>
+              <div class="slider-container">
+                <input type="range" id="sliderMusic" min="0" max="100" value="70">
+                <span id="valMusic">70%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Social & Friend Code -->
+          <div class="settings-section">
+            <h3 class="settings-title">COURIER NETWORK // FRIEND CODE</h3>
+            <div class="friend-code-card">
+              <div class="code-info">
+                <span class="code-label">YOUR FRIEND CODE:</span>
+                <span id="myFriendCode" class="code-val">SKY-VEX1</span>
+              </div>
+              <button id="btnCopyFriendCode" class="btn btn-sm btn-secondary">COPY CODE</button>
+              <button id="btnOpenAddFriend" class="btn btn-sm btn-primary">ADD FRIEND</button>
+            </div>
+          </div>
+
+          <!-- Age Bucket Selection -->
+          <div class="settings-section">
+            <h3 class="settings-title">AGE TIER (SERVER ENFORCED)</h3>
+            <div class="age-bucket-selector">
+              <button class="age-option-btn" data-bucket="under_13">Under 13 (Child Privacy)</button>
+              <button class="age-option-btn" data-bucket="13_15">13–15 (Teen Guarded)</button>
+              <button class="age-option-btn active" data-bucket="16_plus">16+ (Standard)</button>
+            </div>
+          </div>
+
+          <!-- Privacy & GDPR Data Rights -->
+          <div class="settings-section">
+            <h3 class="settings-title">GDPR / PRIVACY COMPLIANCE</h3>
+            <p class="privacy-desc">Export a structured JSON copy of all account history or permanently wipe data.</p>
+            <div class="privacy-buttons">
+              <button id="btnExportData" class="btn btn-secondary">
+                <span>📥</span> EXPORT DATA (GDPR ART. 15)
+              </button>
+              <button id="btnDeleteAccount" class="btn btn-danger">
+                <span>⚠️</span> PERMANENT DATA WIPE (GDPR ART. 17)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Friend Sub-Modal -->
+    <div id="addFriendModal" class="ui-layer modal-screen" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>LINK COURIER FRIEND</h2>
+          <button id="btnCloseAddFriend" class="icon-close" aria-label="Cancel">✕</button>
+        </div>
+        <p class="card-desc">Enter courier friend code (e.g. SKY-7Q2X):</p>
+        <input type="text" id="inputFriendCode" class="neon-input" placeholder="SKY-XXXX" maxlength="10">
+        <div id="addFriendStatus" class="error-msg" style="display: none;"></div>
+        <button id="btnConfirmAddFriend" class="btn btn-primary" style="margin-top: 14px;">CONNECT FRIEND</button>
       </div>
     </div>
 
@@ -151,7 +371,7 @@
       <div class="modal-card modal-lg">
         <div class="modal-header">
           <h2>GLOBAL LEADERBOARD</h2>
-          <button id="btnCloseLeaderboard" class="icon-close">✕</button>
+          <button id="btnCloseLeaderboard" class="icon-close" aria-label="Close Leaderboard">✕</button>
         </div>
         <div id="leaderboardList" class="leaderboard-container">
           <div class="loading-msg">Fetching rankings from Redis...</div>
@@ -167,7 +387,7 @@
       <div class="modal-card">
         <div class="modal-header">
           <h2>TRANSPARENT SUPPLY DROPS</h2>
-          <button id="btnCloseSupplyDrop" class="icon-close">✕</button>
+          <button id="btnCloseSupplyDrop" class="icon-close" aria-label="Close Supply Drop">✕</button>
         </div>
         <p class="drop-disclaimer">Pre-disclosed immutable odds table (standard-v7). No hidden probabilities.</p>
         <div id="oddsTableList" class="odds-list"></div>
@@ -178,18 +398,8 @@
       </div>
     </div>
 
-    <!-- Daily Contracts Modal -->
-    <div id="contractsModal" class="ui-layer modal-screen" style="display: none;">
-      <div class="modal-card">
-        <div class="modal-header">
-          <h2>DAILY CONTRACTS</h2>
-          <button id="btnCloseContracts" class="icon-close">✕</button>
-        </div>
-        <div id="contractsList" class="contracts-list"></div>
-      </div>
-    </div>
   </div>
 
-  <script src="game.js?v=2.0.0"></script>
+  <script src="game.js?v=2.1.0"></script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { IDatabase, getDatabase } from '@libs/db';
 import { AuthService } from '@libs/auth';
 import { AgeBucket, AuthTokensResponse, PlayerModel } from '@libs/shared-types';
@@ -126,24 +127,50 @@ export class ProfileAuthService {
     };
   }
 
-  // CRIT-04: Verify parental gate math challenge and return 5-minute signed token
+  // CRIT-A1: Generate parental gate math challenge with signed challenge_token
+  createParentalGateChallenge(): { challenge_id: string; question: string; challenge_token: string } {
+    const num1 = Math.floor(Math.random() * 8) + 3; // 3 to 10
+    const num2 = Math.floor(Math.random() * 8) + 3; // 3 to 10
+    const challengeId = uuidv4();
+    const expectedAnswer = num1 * num2;
+    const challengeToken = AuthService.generateParentalGateChallenge(challengeId, expectedAnswer);
+
+    // NEVER leak challenge_solution, num1, or num2!
+    return {
+      challenge_id: challengeId,
+      question: `${num1} × ${num2} = ?`,
+      challenge_token: challengeToken
+    };
+  }
+
+  // CRIT-A1, RED-201, RED-202, RED-203: Verify challenge_token and answer, rejecting tampering with 403
   async verifyParentalGate(
     playerId: string,
-    body: { answer: number; num1?: number; num2?: number; challenge_solution?: number }
+    body: { challenge_token?: string; answer?: number }
   ): Promise<{ parental_gate_token: string; expires_in_seconds: number }> {
-    const { answer, num1, num2, challenge_solution } = body;
-    if (answer === undefined || answer === null || isNaN(answer)) {
-      const err: any = new Error('answer is required and must be a number');
-      err.code = 'VALIDATION_ERROR';
+    const { challenge_token, answer } = body || {};
+
+    if (!challenge_token || typeof challenge_token !== 'string') {
+      const err: any = new Error('challenge_token is required');
+      err.code = 'PARENTAL_GATE_REQUIRED';
       throw err;
     }
 
-    let expected = challenge_solution;
-    if (expected === undefined && num1 !== undefined && num2 !== undefined) {
-      expected = num1 * num2;
+    if (answer === undefined || answer === null || !Number.isInteger(answer)) {
+      const err: any = new Error('answer is required and must be an integer');
+      err.code = 'PARENTAL_GATE_REQUIRED';
+      throw err;
     }
 
-    if (expected !== undefined && answer !== expected) {
+    const payload = AuthService.verifyParentalGateChallenge(challenge_token);
+
+    if (Date.now() > payload.expires_at) {
+      const err: any = new Error('Challenge has expired');
+      err.code = 'PARENTAL_GATE_REQUIRED';
+      throw err;
+    }
+
+    if (answer !== payload.expected_answer) {
       const err: any = new Error('Incorrect parental gate answer');
       err.code = 'PARENTAL_GATE_REQUIRED';
       throw err;

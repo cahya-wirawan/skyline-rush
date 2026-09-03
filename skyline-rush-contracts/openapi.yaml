@@ -240,20 +240,29 @@ components:
           type: string
           nullable: true
 
-    ParentalGateVerifyRequest:
+    ParentalGateChallengeResponse:
       type: object
       required:
-        - answer
+        - challenge_id
+        - question
+        - challenge_token
       properties:
         challenge_id:
           type: string
+        question:
+          type: string
+        challenge_token:
+          type: string
+
+    ParentalGateVerifyRequest:
+      type: object
+      required:
+        - challenge_token
+        - answer
+      properties:
+        challenge_token:
+          type: string
         answer:
-          type: integer
-        num1:
-          type: integer
-        num2:
-          type: integer
-        challenge_solution:
           type: integer
 
     ParentalGateVerifyResponse:
@@ -801,6 +810,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/auth/parental-gate/challenge:
+    get:
+      summary: Request arithmetic parental gate challenge for under-13 protected actions
+      operationId: getParentalGateChallenge
+      responses:
+        '200':
+          description: Challenge generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentalGateChallengeResponse'
 
   /v1/auth/parental-gate/verify:
     post:

@@ -17,6 +17,12 @@ export interface ParentalGateTokenPayload {
   verified_at: number;
 }
 
+export interface ParentalGateChallengePayload {
+  challenge_id: string;
+  expected_answer: number;
+  expires_at: number;
+}
+
 export class AuthService {
   static generateTokens(playerId: string, ageBucket: AgeBucket): { accessToken: string; refreshToken: string } {
     const payload: JwtPayload = {
@@ -56,6 +62,31 @@ export class AuthService {
       verified_at: Date.now()
     };
     return jwt.sign(payload, PARENTAL_GATE_SECRET, { expiresIn: '5m' }); // 5 min freshness window
+  }
+
+  static generateParentalGateChallenge(challengeId: string, expectedAnswer: number): string {
+    const payload: ParentalGateChallengePayload = {
+      challenge_id: challengeId,
+      expected_answer: expectedAnswer,
+      expires_at: Date.now() + 5 * 60 * 1000 // 5-minute TTL
+    };
+    return jwt.sign(payload, PARENTAL_GATE_SECRET, { expiresIn: '5m' });
+  }
+
+  static verifyParentalGateChallenge(challengeToken: string): ParentalGateChallengePayload {
+    try {
+      const decoded = jwt.verify(challengeToken, PARENTAL_GATE_SECRET) as ParentalGateChallengePayload;
+      if (!decoded || typeof decoded.expected_answer !== 'number') {
+        const err: any = new Error('Invalid challenge token');
+        err.code = 'PARENTAL_GATE_REQUIRED';
+        throw err;
+      }
+      return decoded;
+    } catch (err: any) {
+      const error: any = new Error('Invalid or expired parental gate challenge');
+      error.code = 'PARENTAL_GATE_REQUIRED';
+      throw error;
+    }
   }
 
   static verifyParentalGate(token: string | undefined, playerId: string, freshnessSeconds = 300): boolean {

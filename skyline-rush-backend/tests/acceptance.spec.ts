@@ -707,11 +707,11 @@ describe('Skyline Rush Acceptance Test Suite (AC-01 through AC-12, AC-17, AC-18)
 
       expect(purchaseRes.status).toBe(200);
       expect(purchaseRes.body.status).toBe('granted');
-      expect(purchaseRes.body.entitlement.cores).toBe(25);
+      expect(purchaseRes.body.entitlement.cores).toBe(50);
 
       // Verify balance increased
       const bal = await db.getBalance(childPlayerId);
-      expect(bal.cores).toBe(25);
+      expect(bal.cores).toBe(50);
     });
 
     it('prevents duplicate grant when same transaction_id is submitted twice', async () => {
@@ -760,7 +760,7 @@ describe('Skyline Rush Acceptance Test Suite (AC-01 through AC-12, AC-17, AC-18)
       expect(bal2.chips).toBe(12500);
     });
 
-    it('verifies parental gate math challenge and issues signed 5-minute token (CRIT-04)', async () => {
+    it('verifies parental gate math challenge and issues signed 5-minute token (CRIT-04, CRIT-A1, RED-201)', async () => {
       const childRes = await request(app)
         .post('/v1/auth/guest')
         .send({ guest_device_id: uuidv4(), age_bucket: 'under_13' });
@@ -768,11 +768,22 @@ describe('Skyline Rush Acceptance Test Suite (AC-01 through AC-12, AC-17, AC-18)
       const childToken = childRes.body.access_token;
       const childPlayerId = childRes.body.player_id;
 
-      // Successful verification
+      // 1. Fetch challenge
+      const chalRes = await request(app).get('/v1/auth/parental-gate/challenge');
+      expect(chalRes.status).toBe(200);
+      expect(chalRes.body.challenge_token).toBeDefined();
+      expect(chalRes.body.challenge_solution).toBeUndefined();
+
+      // Solve arithmetic challenge: format "X × Y = ?"
+      const match = chalRes.body.question.match(/(\d+)\s*×\s*(\d+)/);
+      expect(match).not.toBeNull();
+      const correctAnswer = parseInt(match![1], 10) * parseInt(match![2], 10);
+
+      // 2. Successful verification with correct answer
       const gateRes = await request(app)
         .post('/v1/auth/parental-gate/verify')
         .set('Authorization', `Bearer ${childToken}`)
-        .send({ num1: 7, num2: 8, answer: 56 });
+        .send({ challenge_token: chalRes.body.challenge_token, answer: correctAnswer });
 
       expect(gateRes.status).toBe(200);
       expect(gateRes.body.parental_gate_token).toBeDefined();
@@ -782,13 +793,21 @@ describe('Skyline Rush Acceptance Test Suite (AC-01 through AC-12, AC-17, AC-18)
       const isValid = AuthService.verifyParentalGate(gateRes.body.parental_gate_token, childPlayerId);
       expect(isValid).toBe(true);
 
-      // Incorrect answer should fail
+      // 3. Incorrect answer should fail with 403 (RED-202)
       const failRes = await request(app)
         .post('/v1/auth/parental-gate/verify')
         .set('Authorization', `Bearer ${childToken}`)
-        .send({ num1: 7, num2: 8, answer: 99 });
+        .send({ challenge_token: chalRes.body.challenge_token, answer: correctAnswer + 99 });
 
       expect(failRes.status).toBe(403);
+
+      // 4. Missing challenge_token should fail with 403 (RED-201)
+      const missingTokenRes = await request(app)
+        .post('/v1/auth/parental-gate/verify')
+        .set('Authorization', `Bearer ${childToken}`)
+        .send({ answer: correctAnswer });
+
+      expect(missingTokenRes.status).toBe(403);
     });
   });
 
@@ -881,6 +900,105 @@ describe('Skyline Rush Acceptance Test Suite (AC-01 through AC-12, AC-17, AC-18)
         console.log(`Supply Drop fairness for ${entry.reward}: Expected = ${(expectedRatio * 100).toFixed(1)}%, Observed = ${(observedRatio * 100).toFixed(2)}%, Diff = ${(diff * 100).toFixed(2)}%`);
         expect(diff).toBeLessThanOrEqual(0.01);
       }
+    });
+  });
+
+  // Option A & B Observability & Endpoints
+  describe('Option A & B: Health Probes, Metrics, Roster, and Privacy Aliases', () => {
+    let token: string;
+    let playerId: string;
+
+    beforeEach(async () => {
+      const authRes = await request(app)
+        .post('/v1/auth/guest')
+        .send({ guest_device_id: uuidv4(), age_bucket: '16_plus' });
+      token = authRes.body.access_token;
+      playerId = authRes.body.player_id;
+    });
+
+    it('returns 200 on /health/live shallow probe', async () => {
+      const res = await request(app).get('/health/live');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('ok');
+      expect(res.body.uptime).toBeDefined();
+    });
+
+    it('returns 200 on /health/ready deep probe when dependencies are healthy', async () => {
+      const res = await request(app).get('/health/ready');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('ready');
+      expect(res.body.checks.database).toBe('up');
+      expect(res.body.checks.cache).toBe('up');
+    });
+
+    it('serves Prometheus metrics on /metrics', async () => {
+      const res = await request(app).get('/metrics');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('http_requests_total');
+      expect(res.text).toContain('skyline_active_runs_total');
+      expect(res.text).toContain('skyline_redeploy_conversions_total');
+      expect(res.text).toContain('skyline_fraud_dropped_runs_total');
+    });
+
+    it('generates secure arithmetic challenge on /v1/auth/parental-gate/challenge (CRIT-A1, RED-203)', async () => {
+      const res = await request(app).get('/v1/auth/parental-gate/challenge');
+      expect(res.status).toBe(200);
+      expect(res.body.challenge_id).toBeDefined();
+      expect(res.body.challenge_token).toBeDefined();
+      expect(res.body.question).toMatch(/\d+ × \d+ = \?/);
+      expect(res.body.challenge_solution).toBeUndefined();
+      expect(res.body.num1).toBeUndefined();
+      expect(res.body.num2).toBeUndefined();
+    });
+
+    it('supports roster get, unlock with cores, and equip', async () => {
+      // 1. Get roster
+      const rosterRes = await request(app)
+        .get('/v1/roster')
+        .set('Authorization', `Bearer ${token}`);
+      expect(rosterRes.status).toBe(200);
+      expect(rosterRes.body.runners.length).toBeGreaterThan(0);
+      expect(rosterRes.body.runners.find((r: any) => r.id === 'vex').owned).toBe(true);
+
+      // 2. Add Cores for unlock
+      await db.initBalance(playerId, 0, 100);
+
+      // 3. Unlock Nyx (75 cores)
+      const unlockRes = await request(app)
+        .post('/v1/roster/unlock')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', uuidv4())
+        .send({ item_type: 'runner', item_id: 'nyx' });
+      expect(unlockRes.status).toBe(200);
+      expect(unlockRes.body.ok).toBe(true);
+
+      // 4. Equip Nyx
+      const equipRes = await request(app)
+        .post('/v1/roster/equip')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ item_type: 'runner', item_id: 'nyx' });
+      expect(equipRes.status).toBe(200);
+      expect(equipRes.body.ok).toBe(true);
+
+      // Verify profile reflects equipped runner
+      const profile = await request(app)
+        .get('/v1/profile')
+        .set('Authorization', `Bearer ${token}`);
+      expect(profile.body.equipped.runner_id).toBe('nyx');
+    });
+
+    it('supports /v1/privacy/data-export and /v1/privacy/delete-account aliases', async () => {
+      const exportRes = await request(app)
+        .post('/v1/privacy/data-export')
+        .set('Authorization', `Bearer ${token}`);
+      expect(exportRes.status).toBe(202);
+      expect(exportRes.body.data.profile.player_id).toBe(playerId);
+
+      const deleteRes = await request(app)
+        .post('/v1/privacy/delete-account')
+        .set('Authorization', `Bearer ${token}`);
+      expect(deleteRes.status).toBe(200);
+      expect(deleteRes.body.status).toBe('deleted');
     });
   });
 });

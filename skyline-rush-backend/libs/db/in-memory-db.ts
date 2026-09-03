@@ -376,6 +376,47 @@ export class InMemoryDatabase implements IDatabase {
     }
   }
 
+  // RED-205: Atomic unlock and deduction
+  async unlockItemAtomic(
+    playerId: string,
+    itemType: 'runner' | 'board',
+    itemId: string,
+    cost: number,
+    idempotencyKey: string
+  ): Promise<{ ok: boolean; balance: EconomyBalanceModel }> {
+    const ownershipKey = `${playerId}:${itemType}:${itemId}`;
+    if (this.ownerships.has(ownershipKey)) {
+      const balance = await this.getBalance(playerId);
+      return { ok: true, balance };
+    }
+
+    const currentBalance = await this.getBalance(playerId);
+    if (currentBalance.cores < cost) {
+      const err: any = new Error('Insufficient Cores balance');
+      err.code = 'INSUFFICIENT_BALANCE';
+      err.details = { required: cost, available: currentBalance.cores };
+      throw err;
+    }
+
+    const ledgerResult = await this.applyLedgerEntry({
+      playerId,
+      currency: 'cores',
+      delta: -cost,
+      reason: 'unlock_spend',
+      idempotencyKey
+    });
+
+    await this.grantOwnership({
+      player_id: playerId,
+      item_type: itemType,
+      item_id: itemId,
+      equipped: false,
+      acquired_via: 'currency'
+    });
+
+    return { ok: true, balance: ledgerResult.balance };
+  }
+
   async getActiveContracts(): Promise<ContractModel[]> {
     const now = new Date();
     return Array.from(this.contracts.values()).filter(

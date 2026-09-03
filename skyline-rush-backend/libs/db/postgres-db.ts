@@ -370,6 +370,74 @@ export class PostgresDatabase implements IDatabase {
     );
   }
 
+  // RED-205: Atomic item unlock with row locking to prevent double-charge races
+  async unlockItemAtomic(
+    playerId: string,
+    itemType: 'runner' | 'board',
+    itemId: string,
+    cost: number,
+    idempotencyKey: string
+  ): Promise<{ ok: boolean; balance: EconomyBalanceModel }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Row lock on player to prevent double-charge races
+      await client.query('SELECT player_id FROM player WHERE player_id = $1 FOR UPDATE', [playerId]);
+
+      // Check if already owned
+      const ownedRes = await client.query(
+        'SELECT 1 FROM ownership WHERE player_id = $1 AND item_type = $2 AND item_id = $3',
+        [playerId, itemType, itemId]
+      );
+      if (ownedRes.rows.length > 0) {
+        await client.query('COMMIT');
+        const balance = await this.getBalance(playerId);
+        return { ok: true, balance };
+      }
+
+      // Check cores balance
+      const balRes = await client.query(
+        `SELECT COALESCE(SUM(delta), 0) as cores FROM economy_ledger WHERE player_id = $1 AND currency = 'cores'`,
+        [playerId]
+      );
+      const availableCores = parseInt(balRes.rows[0]?.cores || '0', 10);
+      if (availableCores < cost) {
+        await client.query('ROLLBACK');
+        const err: any = new Error('Insufficient Cores balance');
+        err.code = 'INSUFFICIENT_BALANCE';
+        err.details = { required: cost, available: availableCores };
+        throw err;
+      }
+
+      // Insert ledger entry
+      const entryId = uuidv4();
+      await client.query(
+        `INSERT INTO economy_ledger (entry_id, player_id, currency, delta, reason, idempotency_key, created_at)
+         VALUES ($1, $2, 'cores', $3, 'unlock_spend', $4, NOW())
+         ON CONFLICT (player_id, idempotency_key) DO NOTHING`,
+        [entryId, playerId, -cost, idempotencyKey]
+      );
+
+      // Insert ownership
+      await client.query(
+        `INSERT INTO ownership (player_id, item_type, item_id, equipped, acquired_via, acquired_at)
+         VALUES ($1, $2, $3, FALSE, 'currency', NOW())
+         ON CONFLICT (player_id, item_type, item_id) DO NOTHING`,
+        [playerId, itemType, itemId]
+      );
+
+      await client.query('COMMIT');
+      const balance = await this.getBalance(playerId);
+      return { ok: true, balance };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async getActiveContracts(): Promise<ContractModel[]> {
     return Array.from(this.defaultContracts.values());
   }
@@ -404,7 +472,7 @@ export class PostgresDatabase implements IDatabase {
     return this.mapContractProgress(res.rows[0]);
   }
 
-  // CRIT-11: Support repeated claims with same idempotency key returning without 409
+  // RED-206: Atomic conditional update on claimContract with claim_idempotency_key
   async claimContract(playerId: string, contractId: string, idempotencyKey?: string): Promise<{ contract: ContractModel; progress: ContractProgressModel }> {
     const contract = await this.getContractById(contractId);
     if (!contract) {
@@ -413,24 +481,46 @@ export class PostgresDatabase implements IDatabase {
       throw err;
     }
 
-    const current = await this.getContractProgress(playerId, contractId);
-    if (!current || current.progress < contract.objective.target) {
+    const target = contract.objective.target;
+
+    // Atomic conditional update
+    const updateRes = await this.pool.query(
+      `UPDATE contract_progress
+       SET claimed_at = NOW(), claim_idempotency_key = $3
+       WHERE player_id = $1 AND contract_id = $2 AND claimed_at IS NULL AND progress >= $4
+       RETURNING *`,
+      [playerId, contractId, idempotencyKey || null, target]
+    );
+
+    if (updateRes.rows.length > 0) {
+      return { contract, progress: this.mapContractProgress(updateRes.rows[0]) };
+    }
+
+    // Inspect existing progress
+    const existingRes = await this.pool.query(
+      `SELECT * FROM contract_progress WHERE player_id = $1 AND contract_id = $2`,
+      [playerId, contractId]
+    );
+    const existing = existingRes.rows[0];
+
+    if (!existing || existing.progress < target) {
       const err: any = new Error('Contract objective not yet met');
       err.code = 'NOT_COMPLETED';
       throw err;
     }
 
-    if (current.claimed_at) {
+    if (existing.claimed_at) {
+      if (idempotencyKey && existing.claim_idempotency_key === idempotencyKey) {
+        return { contract, progress: this.mapContractProgress(existing) };
+      }
       const err: any = new Error('Contract already claimed');
       err.code = 'ALREADY_CLAIMED';
       throw err;
     }
 
-    const res = await this.pool.query(
-      `UPDATE contract_progress SET claimed_at = NOW() WHERE player_id = $1 AND contract_id = $2 RETURNING *`,
-      [playerId, contractId]
-    );
-    return { contract, progress: this.mapContractProgress(res.rows[0]) };
+    const err: any = new Error('Contract claim failed');
+    err.code = 'ALREADY_CLAIMED';
+    throw err;
   }
 
   async getSupplyDropTable(tableId: string, version?: number): Promise<SupplyDropTableModel | null> {
@@ -611,7 +701,8 @@ export class PostgresDatabase implements IDatabase {
       contract_id: r.contract_id,
       progress: parseInt(r.progress, 10),
       completed_at: r.completed_at ? new Date(r.completed_at) : null,
-      claimed_at: r.claimed_at ? new Date(r.claimed_at) : null
+      claimed_at: r.claimed_at ? new Date(r.claimed_at) : null,
+      claim_idempotency_key: r.claim_idempotency_key || null
     };
   }
 

@@ -102,6 +102,7 @@ export interface ContractProgressModel {
   progress: number;
   completed_at?: Date | null;
   claimed_at?: Date | null;
+  claim_idempotency_key?: string | null;
 }
 
 export interface SupplyDropTableEntry {

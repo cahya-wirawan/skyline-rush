@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: skyline-rush-db-migration
+  namespace: skyline-rush-prod
+  labels:
+    app.kubernetes.io/name: skyline-rush-backend
+    app.kubernetes.io/component: db-migration
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: skyline-rush-db-migration
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: migrate
+          image: skyline-rush-backend:latest
+          imagePullPolicy: IfNotPresent
+          command: ["npm", "run", "migrate"]
+          envFrom:
+            - configMapRef:
+                name: skyline-rush-config
+            - secretRef:
+                name: skyline-rush-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"

@@ -5,15 +5,18 @@ import { PurchaseReceiptDto } from '@libs/shared-types';
 export class BillingService {
   private db: IDatabase;
 
-  private skuEntitlements: Record<string, { chips?: number; cores?: number; non_consumable?: string }> = {
+  private skuEntitlements: Record<string, { chips?: number; cores?: number; non_consumable?: string; remove_interstitials?: boolean }> = {
     chips_small: { chips: 7500 },
     chips_medium: { chips: 12500 },
     chips_large: { chips: 45000 },
     chips_xl: { chips: 65000 },
-    cores_small: { cores: 25 },
-    cores_medium: { cores: 40 },
-    starter_pack: { chips: 10000, cores: 50 },
-    remove_interstitials: { non_consumable: 'remove_interstitials' }
+    cores_small: { cores: 50 },
+    cores_medium: { cores: 120 },
+    cores_large: { cores: 260 },
+    cores_xl: { cores: 600 },
+    cores_vault: { cores: 1400 },
+    starter_pack: { chips: 5000, cores: 100 },
+    remove_interstitials: { remove_interstitials: true, non_consumable: 'remove_interstitials' }
   };
 
   constructor(db?: IDatabase) {

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: skyline-rush-prod
+  labels:
+    app.kubernetes.io/name: skyline-rush
+    app.kubernetes.io/part-of: skyline-rush-system
+    environment: production

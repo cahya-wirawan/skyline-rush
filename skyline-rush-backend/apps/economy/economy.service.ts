@@ -366,22 +366,6 @@ export class EconomyService {
     }
 
     const cost = item.unlock_cost_cores || 50;
-    const balanceResult = await this.db.applyLedgerEntry({
-      playerId,
-      currency: 'cores',
-      delta: -cost,
-      reason: 'unlock_spend',
-      idempotencyKey
-    });
-
-    await this.db.grantOwnership({
-      player_id: playerId,
-      item_type: itemType,
-      item_id: itemId,
-      equipped: false,
-      acquired_via: 'currency'
-    });
-
-    return { ok: true, balance: balanceResult.balance };
+    return this.db.unlockItemAtomic(playerId, itemType, itemId, cost, idempotencyKey);
   }
 }

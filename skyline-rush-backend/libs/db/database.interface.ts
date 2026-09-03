@@ -49,10 +49,17 @@ export interface IDatabase {
   getRunsByDistrict(districtId: string, limit?: number): Promise<RunModel[]>;
   getPlayerBestRun(playerId: string, districtId: string): Promise<RunModel | null>;
 
-  // Ownership
+  // Ownership & Store
   getOwnerships(playerId: string): Promise<OwnershipModel[]>;
   grantOwnership(ownership: Omit<OwnershipModel, 'acquired_at'>): Promise<OwnershipModel>;
   setEquipped(playerId: string, itemType: 'runner' | 'board', itemId: string): Promise<void>;
+  unlockItemAtomic(
+    playerId: string,
+    itemType: 'runner' | 'board',
+    itemId: string,
+    cost: number,
+    idempotencyKey: string
+  ): Promise<{ ok: boolean; balance: EconomyBalanceModel }>;
 
   // Contracts
   getActiveContracts(): Promise<ContractModel[]>;
