@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Skyline Rush — Playable Vertical Slice</title>
-  <link rel="stylesheet" href="style.css?v=2.1.0">
+  <link rel="stylesheet" href="style.css?v=3.0.0">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
@@ -18,16 +18,24 @@
     <div id="hud" class="ui-layer" style="display: none;">
       <div class="hud-top">
         <div class="hud-stat score-stat">
-          <span class="hud-label">DIST</span>
+          <span class="hud-label">DISTANCE</span>
           <span id="hudMeters" class="hud-val">0 m</span>
         </div>
         <div class="hud-stat chips-stat">
           <span class="hud-label">CHIPS</span>
-          <span id="hudChips" class="hud-val">0</span>
+          <span class="hud-val"><span class="hud-chip-icon" aria-hidden="true"></span><span id="hudChips">0</span></span>
         </div>
         <div class="hud-stat pause-stat">
-          <button id="btnPause" class="icon-btn" aria-label="Pause Game">⏸</button>
+          <button id="btnPause" class="icon-btn" aria-label="Pause Game">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="5" y="4" width="5" height="16" rx="1.5" fill="currentColor"/><rect x="14" y="4" width="5" height="16" rx="1.5" fill="currentColor"/></svg>
+          </button>
         </div>
+      </div>
+
+      <div class="hud-speed" aria-label="Speed">
+        <span class="hud-speed-label">VELOCITY</span>
+        <span class="hud-speed-track"><span id="hudSpeedFill" class="hud-speed-fill"></span></span>
+        <span class="hud-speed-val"><span id="hudSpeed">0</span><small>km/h</small></span>
       </div>
 
       <!-- PowerUp Timers Bar -->
@@ -35,12 +43,14 @@
 
       <!-- Virtual Controls for Touch / Mobile -->
       <div class="touch-controls">
-        <button id="ctrlLeft" class="touch-btn" aria-label="Move Left">◀</button>
+        <div class="touch-h-group">
+          <button id="ctrlLeft" class="touch-btn" aria-label="Move Left">◀</button>
+          <button id="ctrlRight" class="touch-btn" aria-label="Move Right">▶</button>
+        </div>
         <div class="touch-v-group">
           <button id="ctrlJump" class="touch-btn" aria-label="Jump">▲</button>
           <button id="ctrlSlide" class="touch-btn" aria-label="Slide">▼</button>
         </div>
-        <button id="ctrlRight" class="touch-btn" aria-label="Move Right">▶</button>
       </div>
     </div>
 
@@ -48,54 +58,63 @@
     <div id="hubScreen" class="ui-layer overlay-screen">
       <div class="hub-header">
         <div class="player-pill">
-          <div class="avatar-icon">⚡</div>
+          <div class="avatar-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" fill="currentColor"/></svg>
+          </div>
           <div>
             <div id="hubPlayerName" class="player-name">Runner#...</div>
             <div id="hubAgeBadge" class="age-badge">16+</div>
           </div>
         </div>
         <div class="currencies-pill">
-          <div class="currency-item">
-            <span class="currency-icon chip-icon">💎</span>
+          <div class="currency-item currency-chips">
+            <span class="currency-icon chip-icon" aria-hidden="true"></span>
             <span id="hubChipsVal">0</span>
           </div>
-          <div class="currency-item">
-            <span class="currency-icon core-icon">🔷</span>
+          <div class="currency-item currency-cores">
+            <span class="currency-icon core-icon" aria-hidden="true"></span>
             <span id="hubCoresVal">0</span>
           </div>
-          <button id="btnHubSettings" class="icon-btn-settings" aria-label="Open Settings">⚙️</button>
+          <button id="btnHubSettings" class="icon-btn-settings" aria-label="Open Settings">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 .1-1 7.6 7.6 0 0 0-.1-1l2.1-1.6a.5.5 0 0 0 .1-.7l-2-3.4a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.5.5l-.4 2.6a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.4a.5.5 0 0 0 .1.7L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.7l2 3.4c.1.2.4.3.6.2l2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.6c0 .3.2.5.5.5h4c.3 0 .5-.2.5-.5l.4-2.6a7.3 7.3 0 0 0 1.7-1l2.5 1c.2.1.5 0 .6-.2l2-3.4a.5.5 0 0 0-.1-.7L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
+          </button>
         </div>
       </div>
 
       <div class="hub-brand">
-        <h1 class="game-title">SKYLINE<br><span class="highlight">RUSH</span></h1>
-        <p class="subtitle">Vantage City Rooftop Courier</p>
+        <div class="brand-kicker">VANTAGE CITY // ROOFTOP COURIER</div>
+        <h1 class="game-title"><span class="title-line">SKYLINE</span><span class="title-line highlight">RUSH</span></h1>
+        <p class="subtitle">Outrun the Skyline Authority</p>
       </div>
 
-      <div class="hub-character-preview">
-        <div class="grav-board-glow"></div>
-        <div class="character-card">
+      <!-- Transparent stage: the live courier renders on the canvas behind this gap -->
+      <div class="hub-stage" aria-hidden="true">
+        <div class="stage-ring"></div>
+      </div>
+
+      <div class="hub-bottom">
+        <div class="equipped-strip">
           <span class="equipped-tag">EQUIPPED</span>
           <h3 id="hubRunnerName">VEX</h3>
           <p id="hubBoardName">Grav-Board: Ion Glide</p>
         </div>
-      </div>
 
-      <div class="hub-actions">
-        <button id="btnPlay" class="btn btn-primary pulse-btn">
-          <span class="btn-icon">▶</span> RUN VANTAGE CITY
-        </button>
-        <div class="hub-sub-buttons">
-          <button id="btnShop" class="btn btn-secondary">🛒 Shop</button>
-          <button id="btnRoster" class="btn btn-secondary">⚡ Roster</button>
-          <button id="btnContracts" class="btn btn-secondary">📜 Contracts</button>
-          <button id="btnLeaderboard" class="btn btn-secondary">🏆 Ranks</button>
-          <button id="btnSupplyDrop" class="btn btn-secondary">📦 Drops</button>
+        <div class="hub-actions">
+          <button id="btnPlay" class="btn btn-primary pulse-btn">
+            <span class="btn-icon" aria-hidden="true">▶</span> RUN VANTAGE CITY
+          </button>
+          <div class="hub-sub-buttons">
+            <button id="btnShop" class="btn btn-secondary"><span class="sub-ico" aria-hidden="true">🛒</span><span>Shop</span></button>
+            <button id="btnRoster" class="btn btn-secondary"><span class="sub-ico" aria-hidden="true">⚡</span><span>Roster</span></button>
+            <button id="btnContracts" class="btn btn-secondary"><span class="sub-ico" aria-hidden="true">📜</span><span>Contracts</span></button>
+            <button id="btnLeaderboard" class="btn btn-secondary"><span class="sub-ico" aria-hidden="true">🏆</span><span>Ranks</span></button>
+            <button id="btnSupplyDrop" class="btn btn-secondary"><span class="sub-ico" aria-hidden="true">📦</span><span>Drops</span></button>
+          </div>
         </div>
-      </div>
 
-      <div class="controls-hint">
-        <span>Controls: <b>A / D / ◀ ▶</b> Lane Switch &bull; <b>W / ▲ / Space</b> Jump &bull; <b>S / ▼</b> Slide / Fast-Fall</span>
+        <div class="controls-hint">
+          <span><kbd>A</kbd><kbd>D</kbd> lanes &nbsp;·&nbsp; <kbd>W</kbd><kbd>Space</kbd> jump &nbsp;·&nbsp; <kbd>S</kbd> slide</span>
+        </div>
       </div>
     </div>
 
@@ -400,6 +419,6 @@
 
   </div>
 
-  <script src="game.js?v=2.1.0"></script>
+  <script src="game.js?v=3.0.0"></script>
 </body>
 </html>

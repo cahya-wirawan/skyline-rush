@@ -45,7 +45,7 @@ Open **[http://localhost:3000](http://localhost:3000)** in any modern web browse
 
 #### Interactive Features in the Playable Client
 - **S02 Main Hub**: Real-time balance pills, equipped Courier/Board preview, and quick launcher.
-- **S03 Active Run**: 3-lane rooftop race with parallax skyline hover-traffic, overhead sky-bridges, animated neon billboards, industrial ventilation fans, and dynamic particle systems (slide sparks, thruster plume, coin sparkles).
+- **S03 Active Run**: Retina-sharp (DPR-aware) synthwave renderer — striped sun and twinkling starfield, two-layer parallax skyline with lit window grids and blinking beacons, scrolling perspective floor grid, bloomed neon rails and dashed lane markers, hazard-striped hurdles, laser barriers, rotor drones with scan cones, spinning hex chips, glyph-labelled power-up orbs, a fully articulated courier (per-character suit palettes, lean/run/slide/jump poses, board underglow), plus additive particle bloom, boost speed-lines, crash screen-shake/flash, vignette and scanlines.
 - **Dynamic Web Audio Synthesizer**: Procedural 4-bar cyber bassline loop (125–165 BPM synced to speed), 16th-note Boost arpeggiator, Doppler near-miss whoosh sound effects, and DSP low-pass filter (sweeping cutoff to 380 Hz on modals/pause).
 - **S04 Shop**: Cores crates (50, 120, 260, 600, 1400 Cores), Supply Drops, and Daily Specials (`starter_pack`, `remove_interstitials`).
 - **S04A Parental Gate**: Accessible numeric PIN pad and server-signed arithmetic challenge verification required for minor purchases and GDPR actions.

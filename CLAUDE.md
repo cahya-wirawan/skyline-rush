@@ -28,7 +28,8 @@ npm test            # Validates OpenAPI 3.0 spec (25 paths) and all JSON schemas
 cd skyline-rush-backend
 npm install
 npm run build       # TypeScript compilation (tsc) with path aliases (@libs/*)
-npm test            # Runs full acceptance test suite (37 tests in tests/acceptance.spec.ts)
+npm test            # Runs full acceptance test suite (37 tests, single file: tests/acceptance.spec.ts)
+npx jest -t "AC-05" # Run a subset of tests by name/description pattern (all 37 live in one describe block)
 npm run migrate     # Runs PostgreSQL migrations against DATABASE_URL or POSTGRES_URL
 
 # Start API Gateway & Playable Web Server Locally (Port 3000):
