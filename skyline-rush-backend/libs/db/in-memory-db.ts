@@ -312,6 +312,17 @@ export class InMemoryDatabase implements IDatabase {
     return { items, nextCursor };
   }
 
+  async getLedgerSums(playerId: string): Promise<{ chips: number; cores: number }> {
+    let chips = 0;
+    let cores = 0;
+    for (const e of this.ledger.values()) {
+      if (e.player_id !== playerId) continue;
+      if (e.currency === 'chips') chips += e.delta;
+      else if (e.currency === 'cores') cores += e.delta;
+    }
+    return { chips, cores };
+  }
+
   async createRun(runData: Omit<RunModel, 'run_id' | 'server_received_at'>): Promise<{ run: RunModel; isDuplicate: boolean }> {
     for (const existingRun of this.runs.values()) {
       if (

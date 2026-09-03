@@ -1,0 +1,100 @@
+{
+  "uid": "skyline-live-ops",
+  "title": "Skyline Rush — Live Ops",
+  "description": "Active District rollout status and Season Pass tier-completion distribution. Implements 12_ANALYTICS_AND_OBSERVABILITY.md §Dashboards bullet 3. Most of this dashboard is placeholder: LiveOpsService serves content packs and feature flags over HTTP but exports no Prometheus series, so rollout state is currently only observable through the config endpoint traffic panel.",
+  "tags": ["skyline-rush", "liveops", "phase-3"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Live-ops config endpoint traffic by status",
+      "description": "Real signal available today: how often clients successfully fetch live-ops configuration, and whether those fetches are erroring. Derived from the gateway's http_requests_total, which labels unrouted paths as \"unmatched\" to bound cardinality (CLAUDE.md §8). RF-05: the selector must match the path label values the gateway actually emits (req.route.path). The only registered live-ops route today is GET /v1/liveops/config; the previous /v1/config.*|/v1/content.* selector matched nothing and rendered No Data permanently.",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (path, status) (rate(http_requests_total{path=~\"/v1/liveops/.*\"}[5m]))",
+          "legendFormat": "{{path}} — {{status}}",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Run volume (live-ops load proxy)",
+      "description": "Runs submitted per second. Used as the denominator when judging whether a District rollout changed engagement, and as the load proxy for capacity decisions during an event.",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(skyline_active_runs_total[5m]))",
+          "legendFormat": "runs/s",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Active District rollout percentage",
+      "description": "PLACEHOLDER: skyline_liveops_rollout_percentage{district} is not emitted. LiveOpsService (apps/liveops/liveops.service.ts) resolves content packs and feature flags per request but holds no exported gauge for rollout state. Renders No Data until a liveops exporter publishes the active rollout percentage per district.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 7 },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "max by (district) (skyline_liveops_rollout_percentage)",
+          "legendFormat": "{{district}}",
+          "skylineMetricStatus": "placeholder"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Content pack publish failures",
+      "description": "PLACEHOLDER: skyline_liveops_pack_publish_failures_total is not emitted. Content packs are validated against schemas/content-pack.schema.json in the contracts package, but publish outcomes are not counted at runtime.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 7 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(increase(skyline_liveops_pack_publish_failures_total[24h]))",
+          "legendFormat": "publish failures (24h)",
+          "skylineMetricStatus": "placeholder"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "histogram",
+      "title": "Season Pass tier-completion distribution",
+      "description": "PLACEHOLDER: skyline_season_pass_tier_players is not emitted. Contract progress is persisted per player (contract_progress) but never aggregated into a distribution series. Renders No Data until a batch exporter publishes the tier histogram in aggregate-only form.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 7 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (tier) (skyline_season_pass_tier_players)",
+          "legendFormat": "tier {{tier}}",
+          "skylineMetricStatus": "placeholder"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,230 @@
+# =============================================================================
+# Skyline Rush — Prometheus alerting rules
+# Phase 3 / AC-P3-9. Implements build-package/12_ANALYTICS_AND_OBSERVABILITY.md
+# "Alerts" section, five paging rules, one per bullet.
+#
+# METRIC PROVENANCE — read before editing.
+#
+#   IMPLEMENTED (rendered today by GET /metrics; see
+#   apps/gateway/gateway.app.ts and libs/metrics/index.ts):
+#     - skyline_balance_reconciliation_errors_total
+#     - skyline_receipt_validation_failures_total
+#     - skyline_receipt_client_rejections_total
+#     - skyline_receipt_validations_total
+#     - skyline_appstore_webhook_signature_failures_total
+#     - skyline_idempotent_replay_total
+#     - http_requests_total, http_request_duration_seconds
+#     - skyline_active_runs_total, skyline_redeploy_conversions_total
+#     - skyline_fraud_dropped_runs_total
+#
+#   PLACEHOLDER (NOT emitted by this prototype — every expression using one is
+#   marked "PLACEHOLDER METRIC" inline). These rules will not fire until the
+#   named metric is actually produced; loading this file will not error, the
+#   expression simply evaluates to no data. They are written out now so the
+#   alerting intent is reviewable, not because the signal exists:
+#     - skyline_supply_drop_payout_total   requires per-open payout tracking,
+#       which recordSupplyDropOpen() persists but never aggregates into a
+#       Prometheus series.
+#     - skyline_supply_drop_published_probability  requires exporting the
+#       disclosed table (economy.service.ts getSupplyDropTable) as a gauge.
+#     - skyline_client_sessions_total / skyline_client_crashed_sessions_total
+#       require the aggregated client-crash telemetry pipeline described in
+#       12_ANALYTICS_AND_OBSERVABILITY.md, which this repo does not ingest.
+#     - skyline_release_version  requires the release-tagging label described
+#       in 18_RELEASE_CHECKLIST.md.
+#
+# The `sum(...)` wrappers are intentional: counters are per-process (see
+# libs/metrics/index.ts) and Prometheus scrapes each Kubernetes replica
+# separately, so every rate must be aggregated across pods before comparison.
+# =============================================================================
+
+groups:
+  - name: skyline-rush-critical
+    interval: 30s
+    rules:
+
+      # -- 12_ANALYTICS §Alerts bullet 1 ---------------------------------------
+      # "Balance-reconciliation error rate > 0 sustained over 5 minutes -> page."
+      - alert: SkylineBalanceReconciliationError
+        expr: sum(rate(skyline_balance_reconciliation_errors_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: economy
+          page: "true"
+        annotations:
+          summary: "Economy ledger and materialized balance have diverged"
+          description: >-
+            skyline_balance_reconciliation_errors_total has been increasing for
+            5 minutes, meaning at least one player's append-only ledger sum no
+            longer equals their economy_balance row. Current rate
+            {{ printf "%.4f" $value }}/s. This breaks the server-authority
+            invariant in CLAUDE.md §1; freeze economy writes, identify the
+            affected player_ids from the structured logs, and reconcile from the
+            ledger (the ledger is the source of truth, the balance is derived).
+
+      # -- 12_ANALYTICS §Alerts bullet 2 ---------------------------------------
+      # "Receipt-validation failure rate > 2% over 15 minutes -> page."
+      #
+      # RF-06 hardening. Two properties keep this rule from being a remote
+      # pager-DoS, given that /v1/auth/guest issues tokens to anyone:
+      #   1. The numerator counts only failures a caller CANNOT manufacture —
+      #      entitlement-grant failures and vanished player rows. Unknown SKUs,
+      #      malformed bodies and missing parental gates go to
+      #      skyline_receipt_client_rejections_total, which nothing pages on.
+      #   2. The absolute-count gate below. clamp_min on the denominator makes
+      #      the ratio extremely sensitive in a quiet window (a single failure
+      #      against near-zero traffic reads as 100%), so the ratio alone is not
+      #      sufficient evidence; at least 10 real failures must have occurred
+      #      in the window before this pages.
+      - alert: SkylineReceiptValidationFailureRate
+        expr: >-
+          (
+            (
+              sum(rate(skyline_receipt_validation_failures_total[15m]))
+              /
+              clamp_min(sum(rate(skyline_receipt_validations_total[15m])), 0.001)
+            ) > 0.02
+          )
+          and
+          (
+            sum(increase(skyline_receipt_validation_failures_total[15m])) >= 10
+          )
+        for: 15m
+        labels:
+          severity: critical
+          team: billing
+          page: "true"
+        annotations:
+          summary: "StoreKit receipt-validation failure rate above 2%"
+          description: >-
+            {{ printf "%.2f" $value }} of receipt validations failed over the
+            last 15 minutes (threshold 0.02, with a floor of 10 absolute
+            failures). Direct financial impact: players are paying and not
+            receiving entitlements. Check the BillingService grant path
+            (createPurchase / applyLedgerEntry) and the App Store Server API
+            status page. Caller-supplied rejections are deliberately NOT in this
+            numerator — inspect skyline_receipt_client_rejections_total for
+            those, and do not treat a spike there as an incident.
+
+      # -- 12_ANALYTICS §Alerts bullet 3 ---------------------------------------
+      # "Supply Drop actual payout distribution drifts > 1 percentage point from
+      #  the published table over a rolling 10,000-open window -> page."
+      #
+      # PLACEHOLDER METRIC: skyline_supply_drop_payout_total and
+      # skyline_supply_drop_published_probability do not exist yet. Supply-drop
+      # opens are persisted (IDatabase.recordSupplyDropOpen) but never exported
+      # as a Prometheus series, and the disclosed odds table is served over HTTP
+      # rather than published as a gauge. Until both exist this rule is inert.
+      #
+      # Prometheus has no native "last N events" window, so the 10,000-open
+      # window is approximated by a time window long enough to contain it at
+      # production volume; revisit the [6h] once real open-rate data exists.
+      #
+      # RF-08: the denominator is wrapped in scalar(). Without it, a `sum by
+      # (rarity) (...)` numerator and a bare `sum(...)` denominator have
+      # different label sets, so default vector matching drops every sample and
+      # the rule would return no data even once the metrics exist. scalar()
+      # makes the total a plain number that broadcasts across every rarity.
+      - alert: SkylineSupplyDropOddsDrift
+        expr: >-
+          abs(
+            (
+              sum by (rarity) (increase(skyline_supply_drop_payout_total[6h]))
+              /
+              scalar(clamp_min(sum(increase(skyline_supply_drop_payout_total[6h])), 1))
+            )
+            -
+            max by (rarity) (skyline_supply_drop_published_probability)
+          ) > 0.01
+        for: 10m
+        labels:
+          severity: critical
+          team: economy
+          compliance: "fairness-disclosure"
+          page: "true"
+        annotations:
+          summary: "Supply Drop payout distribution drifted from the published odds"
+          description: >-
+            Observed payout share for rarity {{ $labels.rarity }} differs from
+            the disclosed probability by {{ printf "%.4f" $value }}
+            (threshold 0.01 = 1 percentage point). The published odds table is a
+            compliance disclosure (11_MONETIZATION_AND_BILLING principle 3), so
+            drift makes a public statement false — treat as P0. NOTE: this rule
+            depends on placeholder metrics that this prototype does not yet emit.
+
+      # -- 12_ANALYTICS §Alerts bullet 4 ---------------------------------------
+      # "Crash-free session rate < 99% over a rolling 1-hour window on a fresh
+      #  release -> page + auto-flag for rollback consideration."
+      #
+      # PLACEHOLDER METRIC: skyline_client_sessions_total,
+      # skyline_client_crashed_sessions_total and skyline_release_version come
+      # from aggregated client crash telemetry, which this repo does not ingest.
+      # The `skyline_release_version` join is what scopes the alert to a *fresh*
+      # release rather than the whole fleet.
+      - alert: SkylineCrashFreeSessionRateBelowTarget
+        expr: >-
+          (
+            1 - (
+              sum by (release) (increase(skyline_client_crashed_sessions_total[1h]))
+              /
+              clamp_min(sum by (release) (increase(skyline_client_sessions_total[1h])), 1)
+            )
+          ) < 0.99
+          and on (release) (skyline_release_version offset 0m) > 0
+        for: 15m
+        labels:
+          severity: critical
+          team: client
+          action: "consider-rollback"
+          page: "true"
+        annotations:
+          summary: "Crash-free session rate below 99% on release {{ $labels.release }}"
+          description: >-
+            Crash-free session rate is {{ printf "%.4f" $value }} over the last
+            hour for release {{ $labels.release }} (target >= 0.99). Auto-flagged
+            for rollback consideration per 12_ANALYTICS_AND_OBSERVABILITY.md.
+            NOTE: this rule depends on placeholder client-telemetry metrics that
+            this prototype does not yet emit.
+
+      # -- 12_ANALYTICS §Alerts bullet 5 ---------------------------------------
+      # "App Store Server Notification webhook signature-verification failure
+      #  rate > 0 -> page (possible spoofing attempt or Apple-side change)."
+      #
+      # RF-01 hardening — READ BEFORE TIGHTENING THIS BACK TO `> 0 for: 0m`.
+      # POST /v1/webhooks/apple is unauthenticated and unrate-limited (see
+      # apps/gateway/gateway.app.ts), so this counter is remotely incrementable
+      # by anyone with one malformed request. A bare `> 0` with `for: 0m` was
+      # therefore a one-request remote pager-DoS. The rule now requires a rate
+      # sustained for 5 minutes at a volume no single stray request can reach:
+      # 0.2/s over a 5m window is ~60 malformed payloads, which is a real
+      # pattern rather than one curl. Apple's own delivery volume never
+      # approaches this when the chain is healthy.
+      #
+      # DEFERRED / NOT COVERED: real JWS signature verification against Apple's
+      # root CA is not implemented (see BillingService.handleAppleWebhook).
+      # This counter therefore detects UNDECODABLE PAYLOADS ONLY. It is not
+      # evidence of a verified spoofing attempt and must not be described as
+      # such until the verification branch exists and feeds the same counter.
+      - alert: SkylineAppStoreWebhookMalformedPayloadRate
+        expr: sum(rate(skyline_appstore_webhook_signature_failures_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+          team: billing
+          security: "true"
+          page: "true"
+        annotations:
+          summary: "Sustained malformed App Store Server Notification payloads"
+          description: >-
+            skyline_appstore_webhook_signature_failures_total has been rising at
+            {{ printf "%.4f" $value }}/s for 5 minutes (threshold 0.2/s). This
+            counts payloads POSTed to /v1/webhooks/apple that did not decode as
+            a base64 JSON envelope — it does NOT mean a signature check failed,
+            because real JWS verification against Apple's root CA is not
+            implemented yet. Sustained volume means either Apple changed its
+            envelope format, or an anonymous caller is hammering the endpoint
+            (it is unauthenticated). Neither warrants processing refunds from
+            these payloads: handleAppleWebhook rejects an undecodable body
+            outright and performs no ledger writes. Real spoofing detection is
+            tracked as the outstanding JWS-verification work item.

@@ -71,4 +71,4 @@ Run the full acceptance test suite:
 ```bash
 npm test
 ```
-Verifies 37 tests covering Acceptance Criteria AC-01 through AC-12, AC-17, AC-18, and Options A & B.
+Verifies 55 tests across two files: `tests/acceptance.spec.ts` covers Acceptance Criteria AC-01 through AC-12, AC-17, AC-18, Options A & B, and Phase 3 observability; `tests/ledger-balance-invariant.spec.ts` proves the ledger/`economy_balance` invariant holds for every `IDatabase` implementation, including a Postgres-path test that's conditionally skipped when `DATABASE_URL`/`POSTGRES_URL` isn't set.

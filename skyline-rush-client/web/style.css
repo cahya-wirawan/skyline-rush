@@ -9,6 +9,18 @@
   --panel-2: rgba(255, 255, 255, 0.04);
   --line: rgba(255, 255, 255, 0.09);
   --line-strong: rgba(255, 255, 255, 0.16);
+  /* RF-02: boundary colour for INTERACTIVE controls whose border is the only
+     thing identifying the control (WCAG 2.1 SC 1.4.11 requires >= 3:1 there).
+     --line / --line-strong stay as they are for non-interactive dividers and
+     card edges, which SC 1.4.11 does not cover. */
+  --line-control: rgba(255, 255, 255, 0.40);
+  /* RF-02: accent-button gradient stops, hoisted out of the rule so
+     check-contrast.js can audit white text against each stop. The previous
+     ramp (#ff6a9c / --magenta / #b8003f) put white at 2.69:1 and 3.57:1 on the
+     first two stops, below the 4.5:1 normal-text floor. */
+  --accent-1: #d61f5c;
+  --accent-2: #c2185b;
+  --accent-3: #9c0036;
   --text: #eef2ff;
   --muted: #8b9bbd;
   --cyan: #00f0ff;
@@ -248,7 +260,7 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
   background: var(--panel);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-control);
   color: #fff;
   display: inline-flex;
   align-items: center;
@@ -490,7 +502,7 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-control);
   background: rgba(255, 255, 255, 0.05);
   color: #fff;
   display: grid;
@@ -636,7 +648,7 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
   background: var(--panel);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-control);
   color: #fff;
   padding: 10px 6px;
   font-size: 0.68rem;
@@ -763,7 +775,7 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
   height: 34px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-control);
   color: #fff;
   font-size: 0.95rem;
   cursor: pointer;
@@ -837,7 +849,7 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
 }
 
 .btn-accent {
-  background: linear-gradient(90deg, #ff6a9c, var(--magenta) 45%, #b8003f);
+  background: linear-gradient(90deg, var(--accent-1), var(--accent-2) 45%, var(--accent-3));
   color: #fff;
   padding: 14px;
   display: flex;
@@ -854,14 +866,14 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
   background: transparent;
   color: var(--muted);
   padding: 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   font-size: 0.8rem;
   letter-spacing: 0.1em;
 }
 
 .btn-ghost:hover {
   color: #fff;
-  border-color: var(--line-strong);
+  border-color: rgba(255, 255, 255, 0.62);
 }
 
 .btn-label {
@@ -1162,7 +1174,7 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
 .shop-card {
   position: relative;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: 14px;
   padding: 16px 12px 12px;
   text-align: center;
@@ -1204,7 +1216,7 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
 }
 
 .badge-popular {
-  background: linear-gradient(90deg, #ff6a9c, var(--magenta));
+  background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
   color: #fff;
   box-shadow: 0 0 12px rgba(255, 45, 117, 0.6);
 }
@@ -1292,7 +1304,7 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
 
 .pin-key {
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-control);
   border-radius: 10px;
   color: #fff;
   font-family: var(--font-display);
@@ -1371,7 +1383,7 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
 .roster-card {
   position: relative;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: 14px;
   padding: 14px 12px 12px;
   text-align: center;
@@ -1411,6 +1423,42 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
   background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.18), rgba(0, 240, 255, 0.08) 60%, transparent 70%);
   border: 1px solid rgba(0, 240, 255, 0.3);
   box-shadow: inset 0 0 20px rgba(0, 240, 255, 0.15);
+}
+
+/* Non-colour state indicators (WCAG 1.4.1 Use of Color) --------------------
+   Every status below pairs a text label (and where useful an icon) with its
+   colour treatment, so the state survives greyscale / colour-blind viewing. */
+.badge-locked {
+  position: absolute;
+  top: -9px;
+  left: 8px;
+  background: var(--panel-solid);
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 0.55rem;
+  font-weight: 800;
+  padding: 3px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.08em;
+}
+
+.roster-card.locked .roster-avatar {
+  filter: grayscale(1) brightness(0.75);
+}
+
+.lb-you-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  font-family: var(--font-display);
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  vertical-align: middle;
 }
 
 .badge-equipped {
@@ -1528,7 +1576,7 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
   flex: 1;
   min-width: 100px;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-control);
   color: var(--muted);
   padding: 8px 10px;
   border-radius: 8px;
@@ -1639,9 +1687,30 @@ h1, h2, h3, h4, .hud-val, .btn, .stat-val, .tab-btn, .code-val, .card-price, .co
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* RF-10: reduced-motion support used to name six selectors by hand, which left
+   every `transition:` (.icon-btn, .touch-btn, .shop-card, .roster-card,
+   .hud-speed-fill, .icon-btn-settings, .icon-close, .btn-secondary hover lift)
+   and the .drop-result fadeIn still animating. A partial implementation is
+   worse than none, because the preference appears to be honoured and is not.
+   The blanket rule below neutralises every declarative animation and
+   transition; the explicit list after it stays so the intent of each looping
+   animation remains greppable. Canvas-side motion (screen shake, crash flash)
+   is NOT reachable from CSS and is damped in game.js — see REDUCED_MOTION. */
 @media (prefers-reduced-motion: reduce) {
-  .pulse-btn, .powerup-pill, .stage-ring, .hub-brand, .hub-bottom, .modal-card {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .pulse-btn, .powerup-pill, .stage-ring, .hub-brand, .hub-bottom, .modal-card,
+  .drop-result {
+    animation: none !important;
   }
 }
 

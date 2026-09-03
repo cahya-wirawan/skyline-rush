@@ -12,6 +12,7 @@ import { LiveOpsService } from '../liveops/liveops.service';
 import { BillingService } from '../billing/billing.service';
 import { PrivacyService } from '../privacy/privacy.service';
 import { IDatabase, getDatabase } from '@libs/db';
+import { renderCounters } from '@libs/metrics';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -140,6 +141,21 @@ export function createGatewayApp(dbInstance?: IDatabase): express.Express {
     body += `\n# HELP skyline_active_runs_total Total active runs submitted\n# TYPE skyline_active_runs_total counter\nskyline_active_runs_total ${skylineActiveRunsTotal}\n`;
     body += `\n# HELP skyline_redeploy_conversions_total Total redeploy actions executed\n# TYPE skyline_redeploy_conversions_total counter\nskyline_redeploy_conversions_total ${skylineRedeployConversionsTotal}\n`;
     body += `\n# HELP skyline_fraud_dropped_runs_total Total runs dropped or excluded by anti-cheat\n# TYPE skyline_fraud_dropped_runs_total counter\nskyline_fraud_dropped_runs_total ${skylineFraudDroppedRunsTotal}\n`;
+
+    // AC-P3-8: counters incremented from EconomyService / BillingService via the
+    // shared in-process registry in @libs/metrics.
+    //
+    // Deliberately NOT exposed here: an outbox-flush success-rate metric. The
+    // outbox is a purely client-side construct (see the client's Outbox / dead
+    // letter handling and 10_OFFLINE_SYNC_AND_STORAGE.md) — the server cannot
+    // observe a flush that never left the device, so a server-side gauge would
+    // be fabricated. The nearest honest server-side signal is
+    // skyline_idempotent_replay_total, which counts requests replayed under an
+    // already-seen Idempotency-Key: that is what a client outbox retry looks
+    // like when it does arrive. Real outbox-flush success rate has to come from
+    // aggregated client telemetry, which this prototype does not ingest.
+    body += renderCounters();
+
     res.send(body);
   });
 

@@ -2,6 +2,7 @@ import request from 'supertest';
 import { createGatewayApp } from '../apps/gateway/gateway.app';
 import { InMemoryDatabase } from '../libs/db/in-memory-db';
 import { AuthService } from '../libs/auth';
+import { getCounter, resetCounters, COUNTER_SPECS } from '../libs/metrics';
 import { v4 as uuidv4 } from 'uuid';
 
 describe('Skyline Rush Acceptance Test Suite (AC-01 through AC-12, AC-17, AC-18)', () => {
@@ -999,6 +1000,280 @@ describe('Skyline Rush Acceptance Test Suite (AC-01 through AC-12, AC-17, AC-18)
         .set('Authorization', `Bearer ${token}`);
       expect(deleteRes.status).toBe(200);
       expect(deleteRes.body.status).toBe('deleted');
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Phase 3 — Observability (AC-P3-8)
+  // ---------------------------------------------------------------------
+  describe('Observability (Phase 3)', () => {
+    let token: string;
+    let playerId: string;
+
+    beforeEach(async () => {
+      resetCounters();
+      const guest = await request(app)
+        .post('/v1/auth/guest')
+        .send({ guest_device_id: uuidv4(), age_bucket: '16_plus' });
+      token = guest.body.access_token;
+      playerId = guest.body.player_id;
+    });
+
+    it('exposes every Phase 3 counter by name in the /metrics text output', async () => {
+      const res = await request(app).get('/metrics');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/plain');
+
+      // Pre-existing metrics must not have been displaced.
+      for (const name of [
+        'http_requests_total',
+        'http_request_duration_seconds',
+        'skyline_active_runs_total',
+        'skyline_redeploy_conversions_total',
+        'skyline_fraud_dropped_runs_total'
+      ]) {
+        expect(res.text).toContain(name);
+      }
+
+      // New Phase 3 counters, each with HELP and TYPE lines.
+      for (const name of [
+        'skyline_balance_reconciliation_errors_total',
+        'skyline_receipt_validation_failures_total',
+        'skyline_receipt_client_rejections_total',
+        'skyline_receipt_validations_total',
+        'skyline_idempotent_replay_total',
+        'skyline_appstore_webhook_signature_failures_total'
+      ]) {
+        expect(res.text).toContain(`# HELP ${name}`);
+        expect(res.text).toContain(`# TYPE ${name} counter`);
+        expect(res.text).toMatch(new RegExp(`^${name} \\d+$`, 'm'));
+      }
+
+      // Every counter declared by the registry is actually rendered.
+      for (const spec of COUNTER_SPECS) {
+        expect(res.text).toContain(spec.name);
+      }
+    });
+
+    it('guards route-path cardinality by labelling unrouted paths "unmatched" (RED-210)', async () => {
+      const noisyPath = `/v1/definitely-not-a-route/${uuidv4()}/${uuidv4()}`;
+      await request(app).get(noisyPath);
+
+      const res = await request(app).get('/metrics');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('path="unmatched"');
+      // The raw high-cardinality path must never appear as a label value.
+      expect(res.text).not.toContain(noisyPath);
+      expect(res.text).not.toContain('definitely-not-a-route');
+    });
+
+    it('increments skyline_balance_reconciliation_errors_total when the ledger sum diverges from the materialized balance', async () => {
+      // Baseline: a freshly created guest has a zero balance and zero ledger
+      // rows, so a balance read must NOT flag a mismatch.
+      const before = getCounter('skyline_balance_reconciliation_errors_total');
+      const okRead = await request(app)
+        .get('/v1/economy/balance')
+        .set('Authorization', `Bearer ${token}`);
+      expect(okRead.status).toBe(200);
+      expect(getCounter('skyline_balance_reconciliation_errors_total')).toBe(before);
+
+      // Now force divergence by writing the materialized balance directly,
+      // bypassing the ledger — exactly the corruption the alert exists for.
+      await db.initBalance(playerId, 0, 500);
+
+      const badRead = await request(app)
+        .get('/v1/economy/balance')
+        .set('Authorization', `Bearer ${token}`);
+      expect(badRead.status).toBe(200);
+      // The read still succeeds and still returns the stored balance:
+      // instrumentation must not alter economy behaviour.
+      expect(badRead.body.cores).toBe(500);
+      expect(getCounter('skyline_balance_reconciliation_errors_total')).toBeGreaterThan(before);
+
+      const metrics = await request(app).get('/metrics');
+      expect(metrics.text).toMatch(/^skyline_balance_reconciliation_errors_total [1-9]\d*$/m);
+    });
+
+    it('RF-06: an unknown SKU counts as a caller rejection, never as a pageable validation failure', async () => {
+      const attemptsBefore = getCounter('skyline_receipt_validations_total');
+      const failuresBefore = getCounter('skyline_receipt_validation_failures_total');
+      const rejectionsBefore = getCounter('skyline_receipt_client_rejections_total');
+
+      const res = await request(app)
+        .post('/v1/purchases/receipt')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', uuidv4())
+        .send({
+          sku: 'not_a_real_sku',
+          transaction_id: `tx_${uuidv4()}`,
+          signed_transaction: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        });
+
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(getCounter('skyline_receipt_validations_total')).toBe(attemptsBefore + 1);
+      // Garbage SKUs are freely producible from an unauthenticated guest token,
+      // so they must not move the numerator of the paging alert.
+      expect(getCounter('skyline_receipt_validation_failures_total')).toBe(failuresBefore);
+      expect(getCounter('skyline_receipt_client_rejections_total')).toBe(rejectionsBefore + 1);
+
+      const metrics = await request(app).get('/metrics');
+      expect(metrics.text).toMatch(/^skyline_receipt_client_rejections_total [1-9]\d*$/m);
+    });
+
+    it('RF-06: a malformed receipt body is a caller rejection, not a validation failure', async () => {
+      const failuresBefore = getCounter('skyline_receipt_validation_failures_total');
+      const rejectionsBefore = getCounter('skyline_receipt_client_rejections_total');
+
+      const res = await request(app)
+        .post('/v1/purchases/receipt')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', uuidv4())
+        .send({ sku: 'cores_small' });
+
+      expect(res.status).toBe(400);
+      expect(getCounter('skyline_receipt_validation_failures_total')).toBe(failuresBefore);
+      expect(getCounter('skyline_receipt_client_rejections_total')).toBe(rejectionsBefore + 1);
+    });
+
+    it('counts a successful receipt as an attempt without incrementing the failure counter', async () => {
+      const failuresBefore = getCounter('skyline_receipt_validation_failures_total');
+
+      const res = await request(app)
+        .post('/v1/purchases/receipt')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', uuidv4())
+        .send({
+          sku: 'cores_small',
+          transaction_id: `tx_${uuidv4()}`,
+          signed_transaction: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('granted');
+      expect(getCounter('skyline_receipt_validation_failures_total')).toBe(failuresBefore);
+      expect(getCounter('skyline_receipt_validations_total')).toBeGreaterThan(0);
+    });
+
+    it('increments skyline_idempotent_replay_total when the same transaction_id is submitted twice', async () => {
+      const txId = `tx_${uuidv4()}`;
+      const body = {
+        sku: 'cores_small',
+        transaction_id: txId,
+        signed_transaction: 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+      };
+
+      const first = await request(app)
+        .post('/v1/purchases/receipt')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', uuidv4())
+        .send(body);
+      expect(first.body.status).toBe('granted');
+
+      const replaysBefore = getCounter('skyline_idempotent_replay_total');
+
+      const second = await request(app)
+        .post('/v1/purchases/receipt')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', uuidv4())
+        .send(body);
+      expect(second.body.status).toBe('duplicate');
+      expect(getCounter('skyline_idempotent_replay_total')).toBe(replaysBefore + 1);
+    });
+
+    it('RF-07: increments skyline_idempotent_replay_total on a replayed supply-drop open', async () => {
+      const before = getCounter('skyline_idempotent_replay_total');
+      const key = uuidv4();
+
+      const first = await request(app)
+        .post('/v1/supply-drops/open')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', key)
+        .send({ acquired_via: 'earned' });
+      expect(first.status).toBe(200);
+      expect(getCounter('skyline_idempotent_replay_total')).toBe(before);
+
+      const replay = await request(app)
+        .post('/v1/supply-drops/open')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', key)
+        .send({ acquired_via: 'earned' });
+      expect(replay.status).toBe(200);
+      expect(replay.body.result).toEqual(first.body.result);
+      expect(getCounter('skyline_idempotent_replay_total')).toBe(before + 1);
+    });
+
+    it('RF-01: rejects an undecodable notification payload without synthesizing a refund', async () => {
+      const before = getCounter('skyline_appstore_webhook_signature_failures_total');
+
+      // Give the player a balance first, so a synthesized refund reversal would
+      // be visible as a negative ledger movement.
+      await request(app)
+        .post('/v1/purchases/receipt')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', uuidv4())
+        .send({
+          sku: 'chips_small',
+          transaction_id: 'test_tx_refund',
+          signed_transaction: 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+        });
+      const balBefore = await request(app)
+        .get('/v1/economy/balance')
+        .set('Authorization', `Bearer ${token}`);
+
+      const res = await request(app)
+        .post('/v1/webhooks/apple')
+        .send({ signedPayload: '!!!! not base64 json !!!!' });
+
+      // Malformed input is terminal: rejected, never processed as a refund.
+      expect(res.status).toBe(400);
+      expect(getCounter('skyline_appstore_webhook_signature_failures_total')).toBe(before + 1);
+
+      const balAfter = await request(app)
+        .get('/v1/economy/balance')
+        .set('Authorization', `Bearer ${token}`);
+      expect(balAfter.body.chips).toBe(balBefore.body.chips);
+      expect(balAfter.body.cores).toBe(balBefore.body.cores);
+
+      const metrics = await request(app).get('/metrics');
+      expect(metrics.text).toMatch(/^skyline_appstore_webhook_signature_failures_total [1-9]\d*$/m);
+    });
+
+    it('RF-01: a missing signedPayload is rejected rather than defaulting to a refund', async () => {
+      const before = getCounter('skyline_appstore_webhook_signature_failures_total');
+      const res = await request(app).post('/v1/webhooks/apple').send({});
+      expect(res.status).toBe(400);
+      expect(getCounter('skyline_appstore_webhook_signature_failures_total')).toBe(before + 1);
+    });
+
+    it('RF-01: a well-formed REFUND notification is still processed', async () => {
+      const txId = `tx_${uuidv4()}`;
+      await request(app)
+        .post('/v1/purchases/receipt')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', uuidv4())
+        .send({
+          sku: 'chips_small',
+          transaction_id: txId,
+          signed_transaction: 'DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD'
+        });
+
+      const balBefore = await request(app)
+        .get('/v1/economy/balance')
+        .set('Authorization', `Bearer ${token}`);
+
+      const payload = Buffer.from(JSON.stringify({
+        notificationType: 'REFUND',
+        data: { transactionId: txId }
+      })).toString('base64');
+
+      const res = await request(app).post('/v1/webhooks/apple').send({ signedPayload: payload });
+      expect(res.status).toBe(200);
+      expect(res.body.received).toBe(true);
+
+      const balAfter = await request(app)
+        .get('/v1/economy/balance')
+        .set('Authorization', `Bearer ${token}`);
+      expect(balAfter.body.chips).toBe(balBefore.body.chips - 7500);
     });
   });
 });

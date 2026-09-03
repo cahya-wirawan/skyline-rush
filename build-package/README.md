@@ -57,7 +57,19 @@ Full rationale in [[04_SYSTEM_ARCHITECTURE]]; entities in
 | [[19_PROMPT_LIBRARY]] | Marked not applicable — no LLM surface exists |
 | [[20_ACCEPTANCE_CRITERIA]] | Given/When/Then per P0 requirement |
 | [[21_RISKS_AND_OPEN_QUESTIONS]] | Product/technical/compliance/content/ops/cost risks, open decisions |
+| [[22_APP_STORE_LISTING]] | App Store listing copy: name, subtitle, promo text, description, keywords, what's-new, review notes |
+| [[23_PRIVACY_NUTRITION_LABEL_MAPPING]] | Every collected data type mapped to an App Privacy nutrition-label answer, traced to the code that collects it; includes the Supply Drop odds server-sourcing verification |
+| [[24_RELEASE_CHECKLIST_STATUS]] | Line-by-line status audit of [[18_RELEASE_CHECKLIST]]: done / blocked / not-applicable with evidence |
+| [[25_ACCESSIBILITY_STATE_AUDIT]] | WCAG 2.1 SC 1.4.1 audit of every status indicator in the Web Runner, plus explicitly deferred NFR-006 items |
 | [[SOURCES]] | Full citation list with access dates and evidence classes |
+
+Documents `22`–`25` are Phase 3 (release-readiness) additions. Three of them are
+**status/audit documents** rather than design specs: they record what is
+verifiable today and what is explicitly deferred, and each carries its own
+"known weaknesses" section. Two automated checks back them —
+`skyline-rush-client`'s `check:contrast` / `check:a11y` / `check:perf` scripts
+and `skyline-rush-backend`'s `validate:observability` — and both are wired into
+those packages' `npm test`.
 
 ## Major design decisions
 

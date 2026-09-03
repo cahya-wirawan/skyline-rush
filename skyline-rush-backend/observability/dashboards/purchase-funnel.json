@@ -1,0 +1,120 @@
+{
+  "uid": "skyline-purchase-funnel",
+  "title": "Skyline Rush — Purchase Funnel",
+  "description": "Shop view -> initiate -> complete, by SKU and age bucket. Implements 12_ANALYTICS_AND_OBSERVABILITY.md §Dashboards bullet 2. Per that doc the age-bucket split is a fairness/compliance signal — confirming no purchase pressure disproportionately converts younger cohorts — and is explicitly NOT a growth-optimization target for minors. Panels marked \"skylineMetricStatus\": \"placeholder\" reference metrics this prototype does not emit yet.",
+  "tags": ["skyline-rush", "billing", "compliance", "phase-3"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Receipt-validation failure rate (15m)",
+      "description": "Numerator/denominator both from libs/metrics. Pages above 2% via SkylineReceiptValidationFailureRate, which additionally requires >= 10 absolute failures in the window. RF-06: the numerator counts only failures a caller cannot manufacture (entitlement-grant failures, vanished player rows). Unknown SKUs, malformed bodies and missing parental gates are counted separately in skyline_receipt_client_rejections_total and are deliberately excluded, because guest tokens are issued to anyone and would otherwise let a stranger drive this stat to 100%.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.01 },
+              { "color": "red", "value": 0.02 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(skyline_receipt_validation_failures_total[15m])) / clamp_min(sum(rate(skyline_receipt_validations_total[15m])), 0.001)",
+          "legendFormat": "failure rate",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Receipt validations — attempted vs. failed",
+      "description": "Absolute volumes behind the failure-rate stat, so a low-traffic ratio spike is distinguishable from a real incident.",
+      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(skyline_receipt_validations_total[5m]))",
+          "legendFormat": "attempted/s",
+          "skylineMetricStatus": "implemented"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(skyline_receipt_validation_failures_total[5m]))",
+          "legendFormat": "failed/s",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Purchase endpoint traffic by status",
+      "description": "POST /v1/purchases/receipt broken out by HTTP status from http_requests_total. 402 indicates insufficient balance, 403 a failed parental gate on a minor purchase.",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (status) (rate(http_requests_total{path=\"/v1/purchases/receipt\"}[5m]))",
+          "legendFormat": "HTTP {{status}}",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Duplicate receipt submissions",
+      "description": "Idempotent replays. Duplicate submissions must never double-grant (CLAUDE.md §3); this panel is the visible proof the guard is firing rather than silently double-granting. RF-07 scope caveat: skyline_idempotent_replay_total is app-wide, not purchase-only — it also counts replayed supply-drop opens and contract claims from EconomyService, so this series is an upper bound on duplicate receipt submissions rather than an exact count.",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(skyline_idempotent_replay_total[5m]))",
+          "legendFormat": "duplicate grants blocked/s",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "barchart",
+      "title": "Conversion by SKU and age bucket (compliance view)",
+      "description": "PLACEHOLDER: skyline_purchase_funnel_total{stage,sku,age_bucket} is not emitted by this prototype. The gateway metrics middleware labels only method/path/status and deliberately does not attach age_bucket, so funnel stages cannot be reconstructed from http_requests_total. Emitting this requires an aggregate-only exporter that never joins age_bucket to a player_id, per 08_SAFETY_PRIVACY_COMPLIANCE.md. Renders No Data until then.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (stage, sku, age_bucket) (increase(skyline_purchase_funnel_total[24h]))",
+          "legendFormat": "{{stage}} — {{sku}} — {{age_bucket}}",
+          "skylineMetricStatus": "placeholder"
+        }
+      ]
+    }
+  ]
+}

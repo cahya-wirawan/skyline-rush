@@ -385,3 +385,132 @@ $ cd skyline-rush-client && npm test
 | RED-213 | **Preserved** | Billboard scanline still guarded by `bh > 1 ? … % bh : pBoard.y`. |
 
 **Conclusion:** The web runner's presentation is materially upgraded with zero regressions in verified behaviour. Final score of the Options A/B/C report (**0.978 / 1.000, PASS**) stands unchanged.
+
+---
+
+# Skyline Rush — Phase 3 (Polish, Submission, Launch) Gauntlet Loop Execution Report
+
+**Execution Date:** 2026-09-03
+**Orchestration Methodology:** Adversarial Multi-Agent Gauntlet Loop — Builder → {Critic, Red-Team, Verifier} in parallel → Reviser → independent re-Verifier → Judge, iterated twice
+**Task:** Phase 3 of `build-package/14_IMPLEMENTATION_ROADMAP.md` ("Polish, submission, launch"), scoped to what is verifiable inside this repository — no App Store Connect account, device farm, or on-call/paging system exists in this environment, so those dependencies are explicitly **deferred with a named reason** rather than silently skipped or assumed complete.
+**Final Verdict:** **PASS**
+**Gauntlet Judge Score:** **0.923 / 1.000** (Threshold: 0.90) — iteration 2 of 2
+**Iteration 1 Score:** 0.729 / 1.000 — **REVISE** (one CRITICAL blocking issue)
+**Blocking Issues (final):** 0
+
+---
+
+## 1. Scope
+
+Phase 3's roadmap deliverables — an accessibility pass (NFR-006), performance tuning to NFR-001 targets, "full analytics/observability dashboards and alerts live," App Store listing assets, a fully executed `18_RELEASE_CHECKLIST.md`, and a soft-launch KPI dashboard against real traffic — assume production infrastructure this repository does not have. The Gauntlet Analyst converted the roadmap into 16 Acceptance Criteria (AC-P3-1 through AC-P3-16) across five workstreams, each scoped to a concrete, machine-checkable pass condition, with everything requiring real-world infrastructure explicitly classified as **Deferred** with a named reason (see `build-package/24_RELEASE_CHECKLIST_STATUS.md`'s deferral-code table: D1 no App Store Connect account, D2 no device/device-farm, D3 no legal counsel, D4 no on-call/paging system, D5 no live cloud database, D6 no support staffing).
+
+| Workstream | ACs | Deliverable |
+|:---|:---|:---|
+| 1. Accessibility | AC-P3-1..4 | WCAG-AA contrast checker, accessible-name/ARIA audit, `prefers-reduced-motion` handling, non-color-only state audit |
+| 2. Performance | AC-P3-5..7 | Frame-time (`PerfStats`) and input-latency instrumentation in the Web Runner, `PERF_REPORT.md` |
+| 3. Observability | AC-P3-8..10 | Extended `/metrics`, `observability/alerting-rules.yml` (5 alerts), 4 Grafana dashboard JSON files |
+| 4. App Store / compliance | AC-P3-11..13 | Listing copy, privacy nutrition-label mapping, Supply Drop odds server-sourcing verification |
+| 5. Release readiness | AC-P3-14..16 | Line-by-line `18_RELEASE_CHECKLIST.md` audit with real evidence or a named deferral |
+
+---
+
+## 2. Iteration 1: Build, independent review, first revision
+
+**Builder** implemented all 16 ACs across two sessions (the first hit its turn limit at AC-P3-3 and was resumed). Deliverables: `build-package/22_APP_STORE_LISTING.md`, `23_PRIVACY_NUTRITION_LABEL_MAPPING.md`, `24_RELEASE_CHECKLIST_STATUS.md`, `25_ACCESSIBILITY_STATE_AUDIT.md`; `skyline-rush-client/PERF_REPORT.md`, `web/check-contrast.js`, `web/check-a11y-labels.js`, `web/check-perfstats.js`; `skyline-rush-backend/libs/metrics/index.ts`, `observability/alerting-rules.yml`, `observability/validate-rules.js`, `observability/dashboards/{economy-health,purchase-funnel,live-ops,reliability}.json`; extensions to `gateway.app.ts`, `economy.service.ts`, `billing.service.ts`, and the DB layer. The Builder self-disclosed 7 known weaknesses up front (no `prefers-reduced-motion` handling existed yet, 8 of 25 dashboard targets were documented placeholders, etc.) rather than claiming a clean pass.
+
+**Critic** (independent, read-only) reviewed the diff for correctness defects and returned **BLOCK** (confidence ~0.75), finding 10 issues — most seriously a wrong table name, `economy_ledger` vs. the schema's `ledger_entry`, in `postgres-db.ts`'s `unlockItemAtomic`.
+
+**Red-Team** (independent, read/grep/bash) attacked the change set adversarially and found 9 issues, the most severe (**Critical**): the pre-existing unauthenticated Apple webhook's malformed-payload path *synthesized and executed a fake refund* against a hardcoded transaction id, and the new Phase 3 alert monitoring it was both blind to genuine spoofing and trivially triggerable as a remote `severity: critical, page: "true", for: 0m` pager-DoS by any anonymous client. Red-Team also confirmed the label-free, bounded-cardinality metrics design and the read-only balance-reconciliation design were both genuinely clean under attack (no PII leak, no cardinality explosion, no unauthorized write path).
+
+**Verifier** (independent) re-ran every claimed test command from a clean shell and confirmed all numeric claims exactly, while independently catching a stale "37 tests" reference left over from an earlier snapshot of the suite.
+
+**Reviser** (round 1) fixed 14 consolidated findings (RF-01 through RF-14) from Critic + Red-Team + Verifier: the webhook no longer synthesizes a fake refund on decode failure and the alert was hardened to `for: 5m` with a rate threshold instead of `for: 0m`/`>0`; the `check-contrast.js` pairing table was rebuilt from actual CSS usage (catching real sub-threshold pairings on `.btn-ghost`, `.btn-accent`, `.badge-popular`); `validate-rules.js` was hardened against 5 distinct escape hatches (empty `expr`, no-op PromQL, empty annotations, malformed PromQL, a fabricated-metric declaration bypass); a PromQL label-cardinality bug in the Supply Drop odds-drift alert was fixed; a mislabeled metric (`skyline_idempotent_replay_total` claiming coverage it didn't have) was corrected; a guest-token-forceable pager alert was split into client-rejection vs. genuine-failure counters with an absolute-count floor; and the `economy_ledger` table-name bug was fixed — **at two sites**, an `INSERT` and a `SELECT COALESCE(SUM(delta))` balance check, the second of which the Reviser found independently (neither Critic nor Red-Team had caught it).
+
+A second, independent **re-Verifier** confirmed all 14 fixes from scratch, including genuine mutation testing of `validate-rules.js` (reproducing all 5 of Red-Team's original bypasses and confirming each now fails) and independently recomputing WCAG contrast ratios from the raw relative-luminance formula for 3 pairings (exact match to the script's own output).
+
+### Iteration-1 Judge verdict: REVISE (0.729)
+
+The Judge independently spot-checked the highest-stakes claims by reading source directly and found a **new critical defect the entire pipeline had missed**: `postgres-db.ts`'s `unlockItemAtomic` — after the round-1 table-name fix — still never updated `economy_balance`, only the ledger. Because the 48-test Jest suite runs exclusively against `InMemoryDatabase` (which correctly maintains both), this defect was structurally invisible to the Builder's own tests, the Critic, the Red-Team, and the first Verifier — none of them exercise the Postgres code path at all. Consequence: any Postgres-backed roster unlock would permanently desync the ledger from the materialized balance, causing the round's own new `SkylineBalanceReconciliationError` alert to page as `severity: critical` forever on entirely correct user behavior, while returning a stale (too-high) balance to the client — a direct violation of CLAUDE.md §1. The Judge also flagged a documentation overclaim (stale, stronger-than-actual contrast figures in two docs) and noted that a prior "all line-number citations fixed" claim was itself only partially true.
+
+| Dimension | Weight | Score |
+|:---|:---:|:---:|
+| correctness | 0.25 | 0.55 |
+| completeness | 0.15 | 0.78 |
+| robustness | 0.15 | 0.72 |
+| security | 0.10 | 0.86 |
+| maintainability | 0.10 | 0.90 |
+| clarity | 0.10 | 0.82 |
+| requirement_satisfaction | 0.15 | 0.72 |
+| **overall** | | **0.729** |
+
+---
+
+## 3. Iteration 2: Targeted revision and final judgment
+
+**Reviser** (round 2) fixed the Judge's 4 required changes:
+
+- **RC-01 (critical):** Refactored `applyLedgerEntry`'s transactional body into a shared private `applyLedgerEntryTx(client, entryData)`, called by both `applyLedgerEntry` and `unlockItemAtomic` on their own transaction's client — so the ledger insert, the `UPDATE economy_balance`, and the `SELECT ... FOR UPDATE` row lock now happen inside one transaction on one code path, for every currency mutation in the class.
+- **RC-02:** Added `tests/ledger-balance-invariant.spec.ts` (7 tests) — an implementation-agnostic invariant test, tests against the real `PostgresDatabase` class with only the wire protocol faked (independently tracking ledger vs. balance state so a partial fix cannot pass), and a `describe.skip`'d live-Postgres layer that correctly reports as skipped rather than passed in this environment. The Reviser proved the test catches the bug class by reintroducing the defect in a scratch copy and confirming the new tests fail (5 of 7) before restoring the fix.
+- **RC-03:** Corrected the stale contrast evidence in both docs to the real, current figures with an honest explanation of the 8 legitimately-decorative exemptions.
+- **RC-04:** An exhaustive citation sweep (not just the originally-flagged 7) found and fixed ~30+ additional stale `file:line` citations, including a systematic off-by-one across every `acceptance.spec.ts` reference.
+
+A third, independent **re-Verifier** reconstructed the original bug in a fresh scratchpad copy (never touching the real repo) and confirmed the new regression test genuinely fails against it (4 of 7 tests, consistent with the Reviser's own reproduction) and genuinely passes against the real fixed file. It re-ran all 5 top-level verification commands fresh — all green — and flagged one remaining cosmetic staleness (root `CLAUDE.md` still citing the pre-new-test-file "48 passing tests"), which was corrected directly (`CLAUDE.md` and `skyline-rush-backend/README.md` now state the accurate 55 tests: 54 passing + 1 conditionally skipped without a live Postgres connection).
+
+### Iteration-2 Judge verdict: PASS (0.923)
+
+Directed explicitly not to defer to the prior consensus, the Judge independently re-read `postgres-db.ts` end-to-end and confirmed, in its own words, that the balance update "genuinely happens inside `unlockItemAtomic`'s transaction via the shared `applyLedgerEntryTx` path," that the row lock covers the read-modify-write (not just the read), and that `applyLedgerEntry`'s external contract is unchanged for all 6 existing callers. It independently assessed the new test's fake as non-vacuous ("nothing in the fake derives balance from the ledger... an implementation that inserts a ledger row without emitting `UPDATE economy_balance` fails `assertLedgerMatchesBalance`") and re-counted `it(` occurrences itself to confirm the corrected test-count documentation (55: 54 passing + 1 skipped) is accurate.
+
+| Dimension | Weight | Iteration 1 | Iteration 2 |
+|:---|:---:|:---:|:---:|
+| correctness | 0.25 | 0.55 | 0.95 |
+| completeness | 0.15 | 0.78 | 0.95 |
+| robustness | 0.15 | 0.72 | 0.85 |
+| security | 0.10 | 0.86 | 0.85 |
+| maintainability | 0.10 | 0.90 | 0.95 |
+| clarity | 0.10 | 0.82 | 0.93 |
+| requirement_satisfaction | 0.15 | 0.72 | 0.95 |
+| **overall** | | **0.729** | **0.923** |
+
+---
+
+## 4. Automated Test Execution Evidence (final state)
+
+```bash
+$ cd skyline-rush-contracts && npm test
+✓ Found 25 paths. All 22 specified endpoints present. Both schemas validated.
+All contracts and schemas successfully verified! (Exit 0)
+
+$ cd skyline-rush-backend && npm run build
+(tsc — no output, clean compile, Exit 0)
+
+$ cd skyline-rush-backend && npm test
+PASS tests/acceptance.spec.ts
+PASS tests/ledger-balance-invariant.spec.ts
+Test Suites: 2 passed, 2 total
+Tests:       1 skipped, 54 passed, 55 total   (the skip is the live-Postgres layer — no DATABASE_URL/POSTGRES_URL in this environment)
+OK — 58 observability checks passed. (Exit 0)
+
+$ cd skyline-rush-client && npm test
+=== All Client Simulations (AC-13, AC-14, AC-15, AC-16) PASSED Successfully! ===
+OK — 59 pairings checked · 51 pass · 0 exempt · 8 decorative (reported, not gated) · 0 fail.
+OK — 64 control(s) ... 0 accessible-name violations.
+OK — 18 PerfStats instrumentation checks passed. (Exit 0)
+```
+
+---
+
+## 5. Non-blocking observations carried into production readiness
+
+These were explicitly evaluated and accepted as out-of-scope for this pass, not overlooked — recorded here so they aren't lost before a real deployment:
+
+- `POST /v1/webhooks/apple` and `GET /metrics` remain unauthenticated and unrate-limited (pre-existing). The webhook's real JWS/x5c signature verification is still outstanding and is disclosed in a code comment; the malformed-payload alert now only detects undecodable payloads, not verified spoofing. Both should be pre-launch gates.
+- No live Postgres instance exists anywhere in this environment's CI, so real `FOR UPDATE` contention, `ON CONFLICT`, and rollback semantics remain structurally unexecuted — the `describe.skip`'d test layer is ready to activate once one exists.
+- No backfill/repair migration exists for any `economy_balance` row that might already be divergent from a pre-fix deployment (moot today, since nothing is deployed; worth a runbook note before any first production migration).
+- 8 of 25 observability dashboard targets and 2 of 5 alert-rule expressions are honestly-annotated `PLACEHOLDER`s pending metrics this prototype doesn't yet emit (e.g., Supply Drop payout-drift tracking).
+- `build-package/24_RELEASE_CHECKLIST_STATUS.md` documents, by design, that the majority of Metadata/Platform-review/QA/Operations items are **Deferred** — no App Store Connect account, device farm, on-call system, or live database exists in this repository. That is the correct, honest state of a design-and-prototype repo, not a gap in this Gauntlet round.
+
+---
+
+## 6. Conclusion
+
+Phase 3 passed the Gauntlet Loop at **0.923 / 1.000** after one revision cycle. The round's real value was structural: an adversarial, multi-agent, iterated review process caught a CLAUDE.md §1 economy-integrity violation that had already survived four independent review stages (self-testing, an independent Critic, an independent Red-Team, and an independent Verifier) — because none of them exercised the code path where the bug lived. The second iteration didn't just patch the symptom; it collapsed two duplicated currency-mutation code paths into one shared, transactionally-correct path, and added a regression test proven (via reconstruction) to actually catch that class of defect. Combined with the Phase 0/1 and Options A/B/C round (0.978/1.000) and the Web Runner v3 visual overhaul, this repository's design blueprint, backend, and playable client have now been through three independent adversarial verification passes.

@@ -10,14 +10,20 @@ Deliberately differentiated from reference runners (e.g. *Subway Surfers*), Skyl
 
 **Phase 0 (Foundations)**, **Phase 1 (Core Loop & Vertical Slice)**, and **Options A, B, and C (Full Meta UI, Production Cloud Infrastructure, and Procedural Visuals/Audio)** are fully implemented and verified via an adversarial Multi-Provider Gauntlet Loop (see [`report-01.md`](report-01.md), Final Score: **0.978 / 1.000**).
 
+**Phase 3 (Polish, Submission, Launch)** — accessibility enforcement, client performance instrumentation, backend observability (alerting rules + Grafana dashboards), App Store submission documentation, and a line-by-line release-checklist audit — passed its own adversarial Gauntlet Loop at **0.923 / 1.000** (see [`report-01.md`](report-01.md)) after a first iteration caught and fixed a critical server-side economy bug. Its status/audit documents record what is verifiable in this environment and what is explicitly deferred to a physical device or a live deployment — see [`24_RELEASE_CHECKLIST_STATUS.md`](build-package/24_RELEASE_CHECKLIST_STATUS.md).
+
 ```
 skyline-rush/
-├── build-package/             # Complete build-ready product blueprint (PRD, UX specs, test plans)
+├── build-package/             # Complete build-ready product blueprint (PRD, UX specs, test plans,
+│                              # App Store listing, privacy label mapping, release + a11y audits)
 ├── skyline-rush-contracts/    # OpenAPI 3.0.3 spec (25 paths), JSON schemas, automated validator
-├── skyline-rush-backend/      # Express/NestJS microservices monorepo, PostgreSQL & Redis configs, 
-│                              # Docker Compose prod, K8s manifests (k8s/), Prometheus metrics (/metrics)
-├── skyline-rush-client/       # Unity 2022.3 LTS scaffolding, C# run engine, and playable Web Runner (web/)
-└── report-01.md               # Unified Gauntlet execution report (PASS, Final Score: 0.978)
+├── skyline-rush-backend/      # Express/NestJS microservices monorepo, PostgreSQL & Redis configs,
+│                              # Docker Compose prod, K8s manifests (k8s/), Prometheus metrics (/metrics),
+│                              # observability/ (alerting rules, 4 Grafana dashboards, validator)
+├── skyline-rush-client/       # Unity 2022.3 LTS scaffolding, C# run engine, playable Web Runner (web/),
+│                              # a11y + perf check scripts, PERF_REPORT.md
+└── report-01.md               # Unified Gauntlet execution report: Phase 0/1 & Options A/B/C (0.978),
+                               # Web Runner v3 visual overhaul, Phase 3 release readiness (0.923)
 ```
 
 ---
@@ -99,13 +105,30 @@ All components have automated test suites verifying Acceptance Criteria AC-01 th
 cd skyline-rush-contracts
 npm test
 
-# 2. Run Backend Acceptance Test Suite (37 tests across AC-01..12, 17, 18, Options A & B)
+# 2. Run Backend Acceptance Test Suite (44 Jest tests across AC-01..12, 17, 18,
+#    Options A & B, and Phase 3 Observability) followed by the observability
+#    artifact validator (alerting rules + Grafana dashboards vs. real metric names)
 cd ../skyline-rush-backend
+npm run build
 npm test
 
-# 3. Run Client Simulation Suite (AC-13, AC-14, AC-15, AC-16)
+# 3. Run Client Simulation Suite (AC-13..AC-16) followed by the Phase 3
+#    accessibility and performance-instrumentation checks
 cd ../skyline-rush-client
 npm test
+```
+
+Phase 3 adds three client checks and one backend check, all chained into the
+`npm test` above and individually runnable:
+
+```bash
+cd skyline-rush-client
+npm run check:contrast   # WCAG 2.1 AA contrast over 36 UI-chrome colour pairings
+npm run check:a11y       # every interactive control has a unique accessible name
+npm run check:perf       # PerfStats frame-time / input-latency instrumentation
+
+cd ../skyline-rush-backend
+npm run validate:observability   # alerting-rules.yml + 4 dashboards vs. emitted metrics
 ```
 
 ---
@@ -119,4 +142,10 @@ The full product design package produced by the `product-blueprint` skill is loc
 - [`08_SAFETY_PRIVACY_COMPLIANCE.md`](build-package/08_SAFETY_PRIVACY_COMPLIANCE.md) & [`09_AUTH_AND_PERMISSIONS.md`](build-package/09_AUTH_AND_PERMISSIONS.md) — COPPA/GDPR child privacy and auth architecture.
 - [`10_OFFLINE_SYNC_AND_STORAGE.md`](build-package/10_OFFLINE_SYNC_AND_STORAGE.md) — Offline outbox sync and reconciliation.
 - [`14_IMPLEMENTATION_ROADMAP.md`](build-package/14_IMPLEMENTATION_ROADMAP.md) & [`20_ACCEPTANCE_CRITERIA.md`](build-package/20_ACCEPTANCE_CRITERIA.md) — Phased roadmap and Given/When/Then acceptance criteria.
-- [`report-01.md`](report-01.md) — Unified Gauntlet execution report covering Phase 0/1 and Options A, B, and C, plus the Web Runner v3 visual overhaul addendum.
+- [`22_APP_STORE_LISTING.md`](build-package/22_APP_STORE_LISTING.md) & [`23_PRIVACY_NUTRITION_LABEL_MAPPING.md`](build-package/23_PRIVACY_NUTRITION_LABEL_MAPPING.md) — Phase 3: App Store listing copy, and every App Privacy nutrition-label answer traced to the code that collects the data.
+- [`24_RELEASE_CHECKLIST_STATUS.md`](build-package/24_RELEASE_CHECKLIST_STATUS.md) & [`25_ACCESSIBILITY_STATE_AUDIT.md`](build-package/25_ACCESSIBILITY_STATE_AUDIT.md) — Phase 3: line-by-line release-checklist status audit, and the WCAG 2.1 SC 1.4.1 non-colour status-indicator audit.
+- [`report-01.md`](report-01.md) — Unified Gauntlet execution report covering Phase 0/1 and Options A, B, and C (0.978/1.000), the Web Runner v3 visual overhaul addendum, and the Phase 3 release-readiness round (0.923/1.000 after a critical-bug revision cycle).
+
+Phase 3 client/ops artifacts living outside `build-package/`:
+- [`skyline-rush-client/PERF_REPORT.md`](skyline-rush-client/PERF_REPORT.md) — frame-time and input-latency instrumentation, gradient-caching optimisation, and measurement caveats.
+- [`skyline-rush-backend/observability/`](skyline-rush-backend/observability/) — `alerting-rules.yml` (5 Prometheus alerts) and four Grafana dashboards (economy health, purchase funnel, live-ops, reliability), both gated by `validate-rules.js`.

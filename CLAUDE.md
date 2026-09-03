@@ -9,7 +9,7 @@ This repository contains the complete implementation of **Phase 0 (Foundations)*
 The repository is structured into three decoupled sub-projects per `build-package/16_REPO_STRUCTURE.md`:
 
 - **`skyline-rush-contracts/`**: OpenAPI 3.0 specification (`openapi.yaml`, 25 paths) and JSON schemas (`schemas/supply-drop-table.schema.json`, `schemas/content-pack.schema.json`) serving as the single source of truth for all network contracts.
-- **`skyline-rush-backend/`**: Node.js / TypeScript microservices monorepo (`gateway`, `profile-auth`, `economy`, `run-integrity`, `leaderboard`, `liveops`, `billing`, `privacy`), PostgreSQL 16 migrations and connection pooling, production Docker Compose (`docker-compose.prod.yml`), Kubernetes manifests (`k8s/`), and Jest acceptance test suite (37 passing tests).
+- **`skyline-rush-backend/`**: Node.js / TypeScript microservices monorepo (`gateway`, `profile-auth`, `economy`, `run-integrity`, `leaderboard`, `liveops`, `billing`, `privacy`), PostgreSQL 16 migrations and connection pooling, production Docker Compose (`docker-compose.prod.yml`), Kubernetes manifests (`k8s/`), Prometheus alerting rules and Grafana dashboards (`observability/`), and Jest test suites (55 tests across 2 files: 54 passing, 1 conditionally skipped without a live Postgres connection).
 - **`skyline-rush-client/`**: Unity 2022.3 LTS C# project architecture (`Assets/Scripts/Run/`, `ProceduralGen/`, `Storage/`, `Networking/`, `Ads/`, `Meta/`), package manifests, Assembly Definitions (`.asmdef`), simulation test runner, and a complete playable Web Runner in `web/` (Canvas2D + dynamic Web Audio synthesizer).
 
 ---
@@ -28,8 +28,8 @@ npm test            # Validates OpenAPI 3.0 spec (25 paths) and all JSON schemas
 cd skyline-rush-backend
 npm install
 npm run build       # TypeScript compilation (tsc) with path aliases (@libs/*)
-npm test            # Runs full acceptance test suite (37 tests, single file: tests/acceptance.spec.ts)
-npx jest -t "AC-05" # Run a subset of tests by name/description pattern (all 37 live in one describe block)
+npm test            # Runs acceptance suite (tests/acceptance.spec.ts) + ledger/balance invariant suite (tests/ledger-balance-invariant.spec.ts) + observability validator — 55 tests total, 54 passing, 1 skipped without DATABASE_URL/POSTGRES_URL
+npx jest -t "AC-05" # Run a subset of tests by name/description pattern
 npm run migrate     # Runs PostgreSQL migrations against DATABASE_URL or POSTGRES_URL
 
 # Start API Gateway & Playable Web Server Locally (Port 3000):
@@ -94,11 +94,37 @@ When modifying or extending this codebase, the following binding constraints mus
 
 ## Navigating the Design Package
 
-`build-package/README.md` indexes the 22 design documents:
+`build-package/README.md` indexes the 26 design documents:
 - `00_REFERENCE_ANALYSIS.md` & `01_PRD.md`: Core vision, personas, scope, and originality boundaries.
 - `02_UX_SCREEN_SPEC.md` & `03_USER_FLOWS.md`: Screen wireframes and user interaction flows.
 - `05_DATA_MODEL.md` & `06_API_SPEC.md`: Schema models and endpoint specifications.
 - `08_SAFETY_PRIVACY_COMPLIANCE.md` & `09_AUTH_AND_PERMISSIONS.md`: COPPA/GDPR compliance checklist.
 - `10_OFFLINE_SYNC_AND_STORAGE.md`: SQLite and outbox synchronization protocol.
 - `14_IMPLEMENTATION_ROADMAP.md` & `20_ACCEPTANCE_CRITERIA.md`: Phase definitions and acceptance criteria.
+- `22_APP_STORE_LISTING.md` & `23_PRIVACY_NUTRITION_LABEL_MAPPING.md`: Release metadata copy and the App Privacy nutrition-label answers traced to collecting code.
+- `24_RELEASE_CHECKLIST_STATUS.md`: Line-by-line done/blocked/N-A audit of `18_RELEASE_CHECKLIST.md`.
+- `25_ACCESSIBILITY_STATE_AUDIT.md`: WCAG 2.1 SC 1.4.1 non-colour status-indicator audit plus deferred NFR-006 items.
 - `report-01.md`: Unified Gauntlet audit report and multi-provider verification scorecard (PASS, Final Score: 0.978).
+
+## Phase 3 — Release Readiness Guardrails
+
+Phase 3 added automated checks that run as part of the existing `npm test`
+entry points. Keep them passing; they are cheap and dependency-free.
+
+- **Client** (`skyline-rush-client`): `npm test` chains the simulation runner
+  with `check:contrast` (WCAG AA contrast over UI chrome pairings),
+  `check:a11y` (every interactive control exposes a unique accessible name),
+  and `check:perf` (verifies the `PerfStats` frame-time / input-latency
+  instrumentation in `web/game.js`, including that `recordFrame()` allocates
+  no per-frame garbage). Adding a colour token, a control, or a `PerfStats`
+  field means updating the corresponding script.
+- **Backend** (`skyline-rush-backend`): `npm test` chains Jest with
+  `validate:observability`, which cross-checks `observability/alerting-rules.yml`
+  and the four `observability/dashboards/*.json` against the metric names
+  actually emitted by the Gateway's `/metrics` handler. A dashboard target or
+  alert expression referencing a metric that does not exist must be explicitly
+  annotated as a `PLACEHOLDER` or the validator fails.
+- **Metrics registry**: services below the Gateway increment counters through
+  the shared in-process registry in `libs/metrics/`; the Gateway renders them.
+  New counters must be added to `COUNTER_SPECS` so they are exposed and
+  validated, not written ad hoc into the response body.

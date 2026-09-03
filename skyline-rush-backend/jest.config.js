@@ -15,6 +15,8 @@ module.exports = {
     '^@libs/shared-types$': '<rootDir>/libs/shared-types/index',
     '^@libs/auth/(.*)$': '<rootDir>/libs/auth/$1',
     '^@libs/auth$': '<rootDir>/libs/auth/index',
+    '^@libs/metrics/(.*)$': '<rootDir>/libs/metrics/$1',
+    '^@libs/metrics$': '<rootDir>/libs/metrics/index',
     '^@apps/(.*)$': '<rootDir>/apps/$1'
   }
 };

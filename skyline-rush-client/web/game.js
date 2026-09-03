@@ -750,7 +750,12 @@ class Runner {
     const next = this.targetLane + dir;
     if (next >= -1 && next <= 1) {
       this.targetLane = next;
+      PerfStats.commitInput(true);   // AC-P3-6: latency sample closes here
       AudioSynth.beep(420, 0.06, 'triangle', 0.1);
+    } else {
+      // RF-11: already in the outer lane. The input was still handled, so
+      // the sample goes to the rejected bucket rather than being dropped.
+      PerfStats.commitInput(false);
     }
   }
 
@@ -758,7 +763,10 @@ class Runner {
     if (!this.isJumping && !this.isSliding) {
       this.isJumping = true;
       this.jumpTimer = 0;
+      PerfStats.commitInput(true);   // RF-11: jump latency is measured too
       AudioSynth.jump();
+    } else {
+      PerfStats.commitInput(false);
     }
   }
 
@@ -768,11 +776,15 @@ class Runner {
       this.jumpTimer = this.jumpDuration * 0.85;
       this.isSliding = true;
       this.slideTimer = 0;
+      PerfStats.commitInput(true);   // RF-11: slide latency is measured too
       AudioSynth.slide();
     } else if (!this.isSliding) {
       this.isSliding = true;
       this.slideTimer = 0;
+      PerfStats.commitInput(true);
       AudioSynth.slide();
+    } else {
+      PerfStats.commitInput(false);
     }
   }
 
@@ -1099,12 +1111,179 @@ function seededRandom(seed) {
 }
 
 // Renderer-side effects state (screen shake, hit flash, world scroll).
+// -------------------------------------------------------------
+// PERFORMANCE INSTRUMENTATION (Phase 3 / AC-P3-5, AC-P3-6)
+// -------------------------------------------------------------
+// Always-on, allocation-free sampling. Both buffers are pre-allocated typed
+// arrays written in place, so the per-frame cost is one subtraction, one store
+// and two integer increments — nothing that can trigger a GC pause and skew
+// the very metric being measured.
+//
+// Read it live from the console:  window.PerfStats.avgMs / .p95Ms /
+// .inputLatencyMs / .sampleCount / .frameTimes
+const PERF_FRAME_SAMPLES = 300;   // ~5 s of history at 60 fps
+const PERF_INPUT_SAMPLES = 120;
+
+const PerfStats = {
+  _frames: new Float64Array(PERF_FRAME_SAMPLES),
+  _frameIdx: 0,
+  _frameCount: 0,
+
+  _inputs: new Float64Array(PERF_INPUT_SAMPLES),
+  _inputIdx: 0,
+  _inputCount: 0,
+  _pendingInputAt: -1,
+
+  // RF-11: inputs the runner REFUSED (a lane change at the outer lane, a jump
+  // while already airborne, a slide while already sliding). These used to be
+  // dropped on the floor, which silently biased the reported p95 towards the
+  // accepted path. They are kept in their own bucket rather than mixed in,
+  // because "how fast did we decide to do nothing" is a different question
+  // from "how fast did the runner respond".
+  _rejects: new Float64Array(PERF_INPUT_SAMPLES),
+  _rejectIdx: 0,
+  _rejectCount: 0,
+
+  // Reused scratch space for percentile sorting; never reallocated.
+  _scratch: new Float64Array(Math.max(PERF_FRAME_SAMPLES, PERF_INPUT_SAMPLES)),
+
+  /** Record one frame delta, in milliseconds. Called once per rAF tick. */
+  recordFrame(ms) {
+    if (!(ms >= 0) || ms > 1000) return;   // ignore tab-restore / debugger stalls
+    this._frames[this._frameIdx] = ms;
+    this._frameIdx = (this._frameIdx + 1) % PERF_FRAME_SAMPLES;
+    if (this._frameCount < PERF_FRAME_SAMPLES) this._frameCount++;
+  },
+
+  /**
+   * Timestamp the moment ANY movement input (lane change, jump, slide) was
+   * received by a handler. RF-11: this used to be called only on the two
+   * lane-change paths, so jump and slide latency was never measured at all.
+   */
+  markInput() {
+    this._pendingInputAt = performance.now();
+  },
+
+  /**
+   * Close the open latency sample at the moment the runner's state is actually
+   * committed. Called from Runner.changeLane() / jump() / slide(), which are
+   * fully synchronous today — the sample therefore measures handler-entry
+   * through state-commit, not through the next painted frame.
+   *
+   * `accepted === false` records the sample in the rejected bucket instead of
+   * discarding it, so a refused input still shows up somewhere.
+   */
+  commitInput(accepted = true) {
+    if (this._pendingInputAt < 0) return;
+    const ms = performance.now() - this._pendingInputAt;
+    this._pendingInputAt = -1;
+    if (!(ms >= 0) || ms > 1000) return;
+    if (accepted) {
+      this._inputs[this._inputIdx] = ms;
+      this._inputIdx = (this._inputIdx + 1) % PERF_INPUT_SAMPLES;
+      if (this._inputCount < PERF_INPUT_SAMPLES) this._inputCount++;
+    } else {
+      this._rejects[this._rejectIdx] = ms;
+      this._rejectIdx = (this._rejectIdx + 1) % PERF_INPUT_SAMPLES;
+      if (this._rejectCount < PERF_INPUT_SAMPLES) this._rejectCount++;
+    }
+  },
+
+  /** Nearest-rank percentile over the first `count` entries of `buf`. */
+  _percentile(buf, count, p) {
+    if (count === 0) return 0;
+    const scratch = this._scratch.subarray(0, count);
+    for (let i = 0; i < count; i++) scratch[i] = buf[i];
+    scratch.sort();
+    const rank = Math.min(count - 1, Math.max(0, Math.ceil(p * count) - 1));
+    return scratch[rank];
+  },
+
+  _mean(buf, count) {
+    if (count === 0) return 0;
+    let sum = 0;
+    for (let i = 0; i < count; i++) sum += buf[i];
+    return sum / count;
+  },
+
+  reset() {
+    this._frameIdx = 0; this._frameCount = 0;
+    this._inputIdx = 0; this._inputCount = 0;
+    this._rejectIdx = 0; this._rejectCount = 0;
+    this._pendingInputAt = -1;
+  },
+
+  /** Plain-object snapshot, convenient for copy/paste out of the console. */
+  snapshot() {
+    return {
+      sampleCount: this.sampleCount,
+      avgMs: Number(this.avgMs.toFixed(3)),
+      p95Ms: Number(this.p95Ms.toFixed(3)),
+      maxMs: Number(this.maxMs.toFixed(3)),
+      fpsAvg: this.avgMs > 0 ? Number((1000 / this.avgMs).toFixed(1)) : 0,
+      inputSampleCount: this.inputSampleCount,
+      inputLatencyMs: Number(this.inputLatencyMs.toFixed(3)),
+      rejectedInputCount: this.rejectedInputCount,
+      rejectedLatencyMs: Number(this.rejectedLatencyMs.toFixed(3)),
+      budgets: { frameMs: 16.6, inputMs: 80 }
+    };
+  }
+};
+
+Object.defineProperties(PerfStats, {
+  sampleCount:      { get() { return this._frameCount; } },
+  avgMs:            { get() { return this._mean(this._frames, this._frameCount); } },
+  p95Ms:            { get() { return this._percentile(this._frames, this._frameCount, 0.95); } },
+  maxMs:            { get() { let m = 0; for (let i = 0; i < this._frameCount; i++) if (this._frames[i] > m) m = this._frames[i]; return m; } },
+  inputSampleCount: { get() { return this._inputCount; } },
+  // Rolling p95 of input-receipt -> targetLane-commit latency, in ms.
+  inputLatencyMs:   { get() { return this._percentile(this._inputs, this._inputCount, 0.95); } },
+  rejectedInputCount: { get() { return this._rejectCount; } },
+  rejectedLatencyMs:  { get() { return this._percentile(this._rejects, this._rejectCount, 0.95); } },
+  // Snapshot copy; allocates on read only, never on the hot path.
+  frameTimes:       { get() { return Array.prototype.slice.call(this._frames, 0, this._frameCount); } }
+});
+
+window.PerfStats = PerfStats;
+
+/**
+ * RF-10: canvas-side motion honours prefers-reduced-motion too.
+ *
+ * The CSS media query cannot reach anything drawn into <canvas>, so screen
+ * shake and the crash flash — the two most vestibular-triggering effects in the
+ * game — were previously unconditional. `matches` is read live rather than
+ * cached at load, so toggling the OS setting mid-session takes effect without a
+ * reload. The listener guard keeps this working in older WebViews where
+ * matchMedia exists but MediaQueryList is not an EventTarget.
+ */
+const REDUCED_MOTION = (() => {
+  const mq = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : null;
+  return {
+    get enabled() { return !!(mq && mq.matches); },
+    /** Scale a motion intensity: 0 when reduced motion is requested. */
+    scale(v) { return this.enabled ? 0 : v; },
+    /** Crash flash is kept, but at a low, non-strobing intensity. */
+    flash(v) { return this.enabled ? Math.min(v, 0.25) : v; }
+  };
+})();
+window.REDUCED_MOTION = REDUCED_MOTION;
+
 const RenderFX = {
   shake: 0,
   flash: 0,
   scroll: 0,      // continuous world-space scroll used for grid / props / dashes
   time: 0,
-  scanPattern: null
+  scanPattern: null,
+  // PERF: gradients whose control points depend only on canvas W/H are built
+  // once per resize instead of once per frame. See rebuildCachedGradients().
+  grad: {
+    vignette: null,
+    haze: null,
+    ground: null,
+    track: null
+  }
 };
 window.RenderFX = RenderFX;
 
@@ -1183,9 +1362,43 @@ function resizeCanvas() {
   pctx.fillStyle = 'rgba(0,0,0,0.10)';
   pctx.fillRect(0, 2, 1, 1);
   RenderFX.scanPattern = ctx.createPattern(pc, 'repeat');
+
+  rebuildCachedGradients();
 }
+
+// PERF (AC-P3-7): every gradient below is fully determined by W, H and the
+// fixed camera constants, so it is rebuilt only on resize rather than on each
+// of the ~60 render() calls per second.
+function rebuildCachedGradients() {
+  const HZ = H * CAM.horizon;
+
+  const vg = ctx.createRadialGradient(W / 2, H * 0.55, H * 0.32, W / 2, H * 0.55, H * 0.95);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.6)');
+  RenderFX.grad.vignette = vg;
+
+  const haze = ctx.createLinearGradient(0, HZ - 60, 0, HZ + 40);
+  haze.addColorStop(0, 'rgba(255, 80, 150, 0)');
+  haze.addColorStop(0.6, 'rgba(255, 80, 150, 0.28)');
+  haze.addColorStop(1, 'rgba(255, 80, 150, 0)');
+  RenderFX.grad.haze = haze;
+
+  const groundGrad = ctx.createLinearGradient(0, HZ, 0, H);
+  groundGrad.addColorStop(0, '#120a2c');
+  groundGrad.addColorStop(0.3, '#0a0818');
+  groundGrad.addColorStop(1, '#04050b');
+  RenderFX.grad.ground = groundGrad;
+
+  // Track gradient starts at the projected far edge of the deck; project()
+  // depends only on W/H and CAM, so this y is stable between resizes.
+  const trackGrad = ctx.createLinearGradient(0, project(-LANE_WIDTH * 1.6, 0, 1400).y, 0, H);
+  trackGrad.addColorStop(0, '#0d1024');
+  trackGrad.addColorStop(0.5, '#121736');
+  trackGrad.addColorStop(1, '#0b0e22');
+  RenderFX.grad.track = trackGrad;
+}
+
 window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
 
 // Camera: vanishing row at 56% of the screen, camera 120 units above the deck
 // and 190 units behind the runner so the courier is fully framed (feet ~81% H).
@@ -1199,6 +1412,10 @@ function project(x, y, z) {
   const projY = (H * CAM.horizon) - ((y - CAM.y) * scale);
   return { x: projX, y: projY, scale: scale };
 }
+
+// Deferred until here: rebuildCachedGradients() calls project(), which reads
+// the `const CAM` above, so the first sizing pass must run after CAM's TDZ.
+resizeCanvas();
 
 const hoverTraffic = new HoverTraffic();
 const particleSystem = new ParticleSystem();
@@ -1236,6 +1453,8 @@ function hexPath(cx, cy, r) {
 
 // ---------- SKY ----------
 function drawSky(HZ, t, hueShift) {
+  // PERF: not cacheable — every stop depends on hueShift, which is derived from
+  // track.distance and therefore changes on every frame of a run.
   const skyGrad = ctx.createLinearGradient(0, 0, 0, HZ);
   skyGrad.addColorStop(0, `hsl(${236 + hueShift}, 55%, 5%)`);
   skyGrad.addColorStop(0.45, `hsl(${258 + hueShift}, 55%, 14%)`);
@@ -1929,20 +2148,12 @@ function render(runner, track, dt) {
   hoverTraffic.draw(ctx);
   drawSkylineLayer(Scenery.near, parallax, HZ, '#0b0c1c', '#151a33', 0.75, t, 1);
 
-  // Horizon haze
-  const haze = ctx.createLinearGradient(0, HZ - 60, 0, HZ + 40);
-  haze.addColorStop(0, 'rgba(255, 80, 150, 0)');
-  haze.addColorStop(0.6, 'rgba(255, 80, 150, 0.28)');
-  haze.addColorStop(1, 'rgba(255, 80, 150, 0)');
-  ctx.fillStyle = haze;
+  // Horizon haze (PERF: cached — control points are a function of H only)
+  ctx.fillStyle = RenderFX.grad.haze;
   ctx.fillRect(0, HZ - 60, W, 100);
 
-  // 3. Ground + retro grid
-  const groundGrad = ctx.createLinearGradient(0, HZ, 0, H);
-  groundGrad.addColorStop(0, '#120a2c');
-  groundGrad.addColorStop(0.3, '#0a0818');
-  groundGrad.addColorStop(1, '#04050b');
-  ctx.fillStyle = groundGrad;
+  // 3. Ground + retro grid (PERF: cached — control points are a function of H only)
+  ctx.fillStyle = RenderFX.grad.ground;
   ctx.fillRect(0, HZ, W, H - HZ);
 
   const GRID = 90;
@@ -1978,11 +2189,8 @@ function render(runner, track, dt) {
   const pFarL = project(-LANE_WIDTH * 1.6, 0, zFar);
   const pFarR = project(LANE_WIDTH * 1.6, 0, zFar);
 
-  const trackGrad = ctx.createLinearGradient(0, pFarL.y, 0, H);
-  trackGrad.addColorStop(0, '#0d1024');
-  trackGrad.addColorStop(0.5, '#121736');
-  trackGrad.addColorStop(1, '#0b0e22');
-  ctx.fillStyle = trackGrad;
+  // PERF: cached — pFarL.y is project(zFar) which depends only on W/H/CAM.
+  ctx.fillStyle = RenderFX.grad.track;
   ctx.beginPath();
   ctx.moveTo(pNearL.x, pNearL.y);
   ctx.lineTo(pFarL.x, pFarL.y);
@@ -2276,11 +2484,8 @@ function render(runner, track, dt) {
     ctx.restore();
   }
 
-  // Vignette
-  const vg = ctx.createRadialGradient(W / 2, H * 0.55, H * 0.32, W / 2, H * 0.55, H * 0.95);
-  vg.addColorStop(0, 'rgba(0,0,0,0)');
-  vg.addColorStop(1, 'rgba(0,0,0,0.6)');
-  ctx.fillStyle = vg;
+  // Vignette (PERF: cached — radial control points are a pure function of W/H)
+  ctx.fillStyle = RenderFX.grad.vignette;
   ctx.fillRect(0, 0, W, H);
 
   // Scanlines
@@ -2421,6 +2626,8 @@ class GameController {
       sfxSlider.oninput = (e) => {
         const val = parseInt(e.target.value, 10);
         document.getElementById('valSfx').textContent = `${val}%`;
+        e.target.setAttribute('aria-valuenow', String(val));
+        e.target.setAttribute('aria-valuetext', `${val} percent`);
         AudioSynth.setSfxVolume(val / 100);
       };
     }
@@ -2429,6 +2636,8 @@ class GameController {
       musicSlider.oninput = (e) => {
         const val = parseInt(e.target.value, 10);
         document.getElementById('valMusic').textContent = `${val}%`;
+        e.target.setAttribute('aria-valuenow', String(val));
+        e.target.setAttribute('aria-valuetext', `${val} percent`);
         AudioSynth.setMusicVolume(val / 100);
       };
     }
@@ -2451,8 +2660,12 @@ class GameController {
     // Age bucket selector
     document.querySelectorAll('.age-option-btn').forEach(btn => {
       btn.onclick = () => {
-        document.querySelectorAll('.age-option-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.age-option-btn').forEach(b => {
+          b.classList.remove('active');
+          b.setAttribute('aria-pressed', 'false');
+        });
         btn.classList.add('active');
+        btn.setAttribute('aria-pressed', 'true');
         const bucket = btn.dataset.bucket;
         Api.ageBucket = bucket;
         localStorage.setItem(STORAGE_KEY_AGE_BUCKET, bucket);
@@ -2485,16 +2698,16 @@ class GameController {
     window.addEventListener('keydown', (e) => {
       AudioSynth.init();
       if (this.state !== 'RUNNING') return;
-      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') this.runner.changeLane(-1);
-      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') this.runner.changeLane(1);
-      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') this.runner.jump();
-      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') this.runner.slide();
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { PerfStats.markInput(); this.runner.changeLane(-1); }
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { PerfStats.markInput(); this.runner.changeLane(1); }
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') { PerfStats.markInput(); this.runner.jump(); }
+      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') { PerfStats.markInput(); this.runner.slide(); }
     });
 
-    document.getElementById('ctrlLeft').onclick = () => { AudioSynth.init(); this.runner.changeLane(-1); };
-    document.getElementById('ctrlRight').onclick = () => { AudioSynth.init(); this.runner.changeLane(1); };
-    document.getElementById('ctrlJump').onclick = () => { AudioSynth.init(); this.runner.jump(); };
-    document.getElementById('ctrlSlide').onclick = () => { AudioSynth.init(); this.runner.slide(); };
+    document.getElementById('ctrlLeft').onclick = () => { PerfStats.markInput(); AudioSynth.init(); this.runner.changeLane(-1); };
+    document.getElementById('ctrlRight').onclick = () => { PerfStats.markInput(); AudioSynth.init(); this.runner.changeLane(1); };
+    document.getElementById('ctrlJump').onclick = () => { PerfStats.markInput(); AudioSynth.init(); this.runner.jump(); };
+    document.getElementById('ctrlSlide').onclick = () => { PerfStats.markInput(); AudioSynth.init(); this.runner.slide(); };
 
     let touchStartX = 0, touchStartY = 0;
     canvas.addEventListener('touchstart', (e) => {
@@ -2512,9 +2725,11 @@ class GameController {
 
       if (Math.max(absX, absY) > 25) {
         if (absX > absY) {
+          PerfStats.markInput();
           if (dx > 0) this.runner.changeLane(1);
           else this.runner.changeLane(-1);
         } else {
+          PerfStats.markInput();
           if (dy > 0) this.runner.slide();
           else this.runner.jump();
         }
@@ -2730,8 +2945,12 @@ class GameController {
 
   selectRosterTab(tab) {
     this.rosterTab = tab;
-    document.getElementById('tabRunners').classList.toggle('active', tab === 'runners');
-    document.getElementById('tabBoards').classList.toggle('active', tab === 'boards');
+    const tabRunnersEl = document.getElementById('tabRunners');
+    const tabBoardsEl = document.getElementById('tabBoards');
+    tabRunnersEl.classList.toggle('active', tab === 'runners');
+    tabBoardsEl.classList.toggle('active', tab === 'boards');
+    tabRunnersEl.setAttribute('aria-selected', String(tab === 'runners'));
+    tabBoardsEl.setAttribute('aria-selected', String(tab === 'boards'));
     this.renderRosterTab();
   }
 
@@ -2754,17 +2973,18 @@ class GameController {
           : (item.id === 'ion-glide' ? 'Balanced Rooftop Glide' : (item.id === 'pulse-ray' ? '2X Chip Multiplier (+3s)' : 'Demolition Boost Shockwave'));
 
         return `
-          <div class="roster-card ${isEquipped ? 'equipped' : ''}">
+          <div class="roster-card ${isEquipped ? 'equipped' : ''} ${item.owned ? '' : 'locked'}">
             ${isEquipped ? '<span class="badge-equipped">EQUIPPED</span>' : ''}
+            ${item.owned ? '' : '<span class="badge-locked"><span aria-hidden="true">\u{1F512}</span> LOCKED</span>'}
             <div class="roster-avatar">${icon}</div>
             <h4>${item.name.toUpperCase()}</h4>
             <p class="roster-stats">${desc}</p>
             ${isEquipped ? `
-              <button class="btn btn-sm btn-secondary" disabled>EQUIPPED</button>
+              <button class="btn btn-sm btn-secondary" disabled aria-label="${item.name} is currently equipped">EQUIPPED</button>
             ` : item.owned ? `
-              <button class="btn btn-sm btn-primary" onclick="window.game.equipItem('${this.rosterTab === 'runners' ? 'runner' : 'board'}', '${item.id}')">EQUIP</button>
+              <button class="btn btn-sm btn-primary" aria-label="Equip ${item.name}" onclick="window.game.equipItem('${this.rosterTab === 'runners' ? 'runner' : 'board'}', '${item.id}')">EQUIP</button>
             ` : `
-              <button class="btn btn-sm btn-accent" onclick="window.game.unlockItem('${this.rosterTab === 'runners' ? 'runner' : 'board'}', '${item.id}', ${item.unlock_cost_cores ?? 50})">UNLOCK (🔷 ${item.unlock_cost_cores ?? 50})</button>
+              <button class="btn btn-sm btn-accent" aria-label="Unlock ${item.name} for ${item.unlock_cost_cores ?? 50} Cores" onclick="window.game.unlockItem('${this.rosterTab === 'runners' ? 'runner' : 'board'}', '${item.id}', ${item.unlock_cost_cores ?? 50})">UNLOCK (🔷 ${item.unlock_cost_cores ?? 50})</button>
             `}
           </div>
         `;
@@ -2837,11 +3057,11 @@ class GameController {
               <div class="contract-progress-text">${current} / ${target} (${pct}%)</div>
             </div>
             ${isClaimed ? `
-              <button class="btn btn-sm btn-secondary" disabled>CLAIMED</button>
+              <button class="btn btn-sm btn-secondary" disabled aria-label="Reward for ${c.title || c.contract_id} already claimed">CLAIMED</button>
             ` : isComplete ? `
-              <button class="btn btn-sm btn-primary pulse-btn" onclick="window.game.claimContract('${c.contract_id}')">CLAIM</button>
+              <button class="btn btn-sm btn-primary pulse-btn" aria-label="Claim reward for ${c.title || c.contract_id}" onclick="window.game.claimContract('${c.contract_id}')">CLAIM</button>
             ` : `
-              <button class="btn btn-sm btn-secondary" disabled>IN PROGRESS</button>
+              <button class="btn btn-sm btn-secondary" disabled aria-label="${c.title || c.contract_id} in progress, ${current} of ${target} ${metric}">IN PROGRESS</button>
             `}
           </div>
         `;
@@ -2883,7 +3103,7 @@ class GameController {
     const status = document.getElementById('addFriendStatus');
     const code = (input.value || '').trim();
     if (!code) {
-      status.textContent = 'Please enter a valid friend code.';
+      status.textContent = 'ERROR: Please enter a valid friend code.';
       status.style.display = 'block';
       return;
     }
@@ -2893,7 +3113,7 @@ class GameController {
       document.getElementById('addFriendModal').style.display = 'none';
       input.value = '';
     } catch (e) {
-      status.textContent = e.message || 'Friend code not found.';
+      status.textContent = `ERROR: ${e.message || 'Friend code not found.'}`;
       status.style.display = 'block';
     }
   }
@@ -2959,7 +3179,7 @@ class GameController {
         list.innerHTML = data.items.map((item, idx) => `
           <div class="lb-row ${item.player_id === Api.playerId ? 'self' : ''}">
             <span class="lb-rank ${idx === 0 ? 'gold' : (idx === 1 ? 'silver' : (idx === 2 ? 'bronze' : ''))}">#${item.rank}</span>
-            <span class="lb-name">${item.display_name}</span>
+            <span class="lb-name">${item.display_name}${item.player_id === Api.playerId ? '<span class="lb-you-chip">YOU</span>' : ''}</span>
             <span class="lb-meters"><b>${item.meters} m</b></span>
           </div>
         `).join('');
@@ -3034,7 +3254,9 @@ window.game = game;
 
 let lastTime = performance.now();
 function gameLoop(now) {
-  const dt = Math.min(0.1, (now - lastTime) / 1000);
+  const rawFrameMs = now - lastTime;
+  PerfStats.recordFrame(rawFrameMs);   // AC-P3-5: allocation-free ring buffer
+  const dt = Math.min(0.1, rawFrameMs / 1000);
   lastTime = now;
 
   let pRunner = null;
@@ -3043,8 +3265,8 @@ function gameLoop(now) {
     if (result.crashed) {
       const p = project(game.runner.currentX * LANE_WIDTH, game.runner.y, 0);
       particleSystem.addDebrisShockwave(p.x, p.y);
-      RenderFX.shake = 16;
-      RenderFX.flash = 1;
+      RenderFX.shake = REDUCED_MOTION.scale(16);   // RF-10
+      RenderFX.flash = REDUCED_MOTION.flash(1);    // RF-10
       game.triggerCrash();
     }
     game.updateHUD();

@@ -4,6 +4,9 @@
   "description": "Client simulation runner and tests for Skyline Rush",
   "private": true,
   "scripts": {
-    "test": "node simulation-runner/run-simulation.js"
+    "test": "node simulation-runner/run-simulation.js && npm run check:contrast && npm run check:a11y && npm run check:perf",
+    "check:contrast": "node web/check-contrast.js",
+    "check:a11y": "node web/check-a11y-labels.js",
+    "check:perf": "node web/check-perfstats.js"
   }
 }

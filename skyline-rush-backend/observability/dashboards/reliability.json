@@ -1,0 +1,137 @@
+{
+  "uid": "skyline-reliability",
+  "title": "Skyline Rush — Reliability",
+  "description": "Crash-free session rate, API error rate by path, and outbox-flush success rate. Implements 12_ANALYTICS_AND_OBSERVABILITY.md §Dashboards bullet 4. API error rate is real; crash-free rate and outbox-flush rate both come from aggregated client telemetry that this prototype does not ingest and are marked placeholder rather than approximated with a server-side stand-in.",
+  "tags": ["skyline-rush", "reliability", "sre", "phase-3"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "API error rate (5xx share, 5m)",
+      "description": "Share of gateway responses returning 5xx. Path labels are cardinality-guarded: unrouted requests are labelled path=\"unmatched\" rather than echoing the raw URL (CLAUDE.md §8, RED-210).",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.005 },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 0.001)",
+          "legendFormat": "5xx share",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Average request duration",
+      "description": "http_request_duration_seconds is exported as a gauge of the rolling mean (see the /metrics handler), not a histogram, so no quantile can be derived from it. Treat as a trend indicator only.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "avg(http_request_duration_seconds)",
+          "legendFormat": "mean request duration",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Unmatched-path request rate",
+      "description": "Traffic hitting no registered route. Watches both for scanning activity and for a client shipping a stale URL. Also the visible proof that the cardinality guard is active.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(http_requests_total{path=\"unmatched\"}[5m]))",
+          "legendFormat": "unmatched/s",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Error rate by route",
+      "description": "Per-route 4xx and 5xx breakdown, for isolating which endpoint regressed.",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (path, status) (rate(http_requests_total{status=~\"4..|5..\"}[5m]))",
+          "legendFormat": "{{path}} — {{status}}",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Crash-free session rate by release",
+      "description": "PLACEHOLDER: skyline_client_sessions_total and skyline_client_crashed_sessions_total come from the aggregated Unity crash-telemetry pipeline described in 12_ANALYTICS_AND_OBSERVABILITY.md §Logs/traces, which this repo does not ingest. Backs the SkylineCrashFreeSessionRateBelowTarget alert. Renders No Data until that pipeline exists.",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0.9, "max": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "1 - (sum by (release) (increase(skyline_client_crashed_sessions_total[1h])) / clamp_min(sum by (release) (increase(skyline_client_sessions_total[1h])), 1))",
+          "legendFormat": "{{release}}",
+          "skylineMetricStatus": "placeholder"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Outbox flush success rate (client telemetry)",
+      "description": "PLACEHOLDER: skyline_client_outbox_flush_total{result} is a CLIENT-side concept. The offline outbox lives entirely on device (10_OFFLINE_SYNC_AND_STORAGE.md); the server cannot observe a flush that never left the device, so no server-side substitute is offered here. The nearest real server signal is skyline_idempotent_replay_total on the Economy Health dashboard. RF-07 scope caveat: that counter is NOT an outbox metric. It counts server-side idempotent-replay hits at three sites only (duplicate purchase receipts, replayed supply-drop opens, replayed contract claims); an outbox retry appears there only if it happens to be one of those three and only if the original had already been recorded.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(skyline_client_outbox_flush_total{result=\"success\"}[15m])) / clamp_min(sum(rate(skyline_client_outbox_flush_total[15m])), 0.001)",
+          "legendFormat": "outbox flush success rate",
+          "skylineMetricStatus": "placeholder"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(skyline_idempotent_replay_total[15m]))",
+          "legendFormat": "server-observed idempotent replays/s (receipts + drops + claims)",
+          "skylineMetricStatus": "implemented"
+        }
+      ]
+    }
+  ]
+}

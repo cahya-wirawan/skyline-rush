@@ -43,6 +43,17 @@ export interface IDatabase {
 
   getLedgerEntries(playerId: string, limit?: number, cursor?: string): Promise<{ items: LedgerEntryModel[]; nextCursor?: string }>;
 
+  /**
+   * Read-only aggregate of the append-only ledger for one player, used solely
+   * by the Phase 3 balance-reconciliation observability check
+   * (EconomyService.reconcileBalance). Optional so that any future IDatabase
+   * implementation stays valid without it; callers must treat `undefined` as
+   * "reconciliation not supported" and skip the check rather than fail.
+   *
+   * This must never mutate state and must never be called from a write path.
+   */
+  getLedgerSums?(playerId: string): Promise<{ chips: number; cores: number }>;
+
   // Run
   createRun(run: Omit<RunModel, 'run_id' | 'server_received_at'>): Promise<{ run: RunModel; isDuplicate: boolean }>;
   getRunById(runId: string): Promise<RunModel | null>;

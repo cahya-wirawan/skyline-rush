@@ -37,6 +37,10 @@
     { "path": "19_PROMPT_LIBRARY.md", "status": "not_applicable" },
     { "path": "20_ACCEPTANCE_CRITERIA.md", "status": "complete" },
     { "path": "21_RISKS_AND_OPEN_QUESTIONS.md", "status": "complete" },
+    { "path": "22_APP_STORE_LISTING.md", "status": "complete" },
+    { "path": "23_PRIVACY_NUTRITION_LABEL_MAPPING.md", "status": "complete" },
+    { "path": "24_RELEASE_CHECKLIST_STATUS.md", "status": "complete" },
+    { "path": "25_ACCESSIBILITY_STATE_AUDIT.md", "status": "complete" },
     { "path": "SOURCES.md", "status": "complete" }
   ],
   "starter_code_included": false,

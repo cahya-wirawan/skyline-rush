@@ -1,4 +1,5 @@
 import { IDatabase, getDatabase } from '@libs/db';
+import { incCounter } from '@libs/metrics';
 import {
   EconomyBalanceModel,
   LedgerEntryModel,
@@ -20,7 +21,42 @@ export class EconomyService {
   }
 
   async getBalance(playerId: string): Promise<EconomyBalanceModel> {
-    return this.db.getBalance(playerId);
+    const balance = await this.db.getBalance(playerId);
+    // AC-P3-8: observability only. Runs AFTER the read, never mutates anything,
+    // and never changes what this method returns — a reconciliation failure is
+    // reported to Prometheus, not surfaced to the caller.
+    await this.reconcileBalance(playerId, balance);
+    return balance;
+  }
+
+  /**
+   * Compare the append-only ledger sum against the materialized economy_balance
+   * row and increment `skyline_balance_reconciliation_errors_total` on any
+   * divergence. Read-only by construction.
+   *
+   * Not a correctness mechanism — the write path's ledger + materialized-balance
+   * invariant is unchanged. This is the detector that makes the
+   * `SkylineBalanceReconciliationError` alert in observability/alerting-rules.yml
+   * meaningful.
+   *
+   * Known cost: one aggregate read per balance read. Set
+   * ECONOMY_RECONCILIATION_DISABLED=1 to switch it off if that ever matters.
+   * Known false-positive source: a balance seeded directly via
+   * IDatabase.initBalance() with a non-zero amount has no backing ledger rows
+   * and will legitimately register as a mismatch.
+   */
+  private async reconcileBalance(playerId: string, balance: EconomyBalanceModel): Promise<void> {
+    if (process.env.ECONOMY_RECONCILIATION_DISABLED === '1') return;
+    if (typeof this.db.getLedgerSums !== 'function') return;   // implementation opted out
+    try {
+      const sums = await this.db.getLedgerSums(playerId);
+      if (!sums) return;
+      if (sums.chips !== balance.chips || sums.cores !== balance.cores) {
+        incCounter('skyline_balance_reconciliation_errors_total');
+      }
+    } catch {
+      // Instrumentation must never break a read path.
+    }
   }
 
   async getLedger(playerId: string, limit = 25, cursor?: string): Promise<{ items: LedgerEntryModel[]; nextCursor?: string }> {
@@ -153,6 +189,9 @@ export class EconomyService {
     // CRIT-09: Cache results by (player_id, idempotency_key) to return identical rewards on retry
     const cacheKey = `${playerId}:${idempotencyKey}`;
     if (this.supplyDropCache.has(cacheKey)) {
+      // RF-07: skyline_idempotent_replay_total must cover every mandated
+      // idempotent endpoint (CLAUDE.md §3), not just billing receipts.
+      incCounter('skyline_idempotent_replay_total');
       return this.supplyDropCache.get(cacheKey)!;
     }
 
@@ -269,6 +308,8 @@ export class EconomyService {
   async claimContract(playerId: string, contractId: string, idempotencyKey: string) {
     const cacheKey = `${playerId}:${contractId}:${idempotencyKey}`;
     if (this.contractClaimCache.has(cacheKey)) {
+      // RF-07: see the matching note in openSupplyDrop().
+      incCounter('skyline_idempotent_replay_total');
       return this.contractClaimCache.get(cacheKey)!;
     }
 

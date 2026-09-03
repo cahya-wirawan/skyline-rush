@@ -185,6 +185,96 @@ export class PostgresDatabase implements IDatabase {
     return this.mapBalance(res.rows[0]);
   }
 
+  /**
+   * RC-01: THE single code path that mutates currency.
+   *
+   * CLAUDE.md §1 requires every balance mutation to append a `ledger_entry` row
+   * AND to keep the materialized `economy_balance` row in step. Both writes live
+   * here, behind one `SELECT ... FOR UPDATE` row lock, so no caller can append a
+   * ledger row without also moving the materialized balance (which is exactly
+   * the divergence `unlockItemAtomic` used to introduce, permanently tripping
+   * the `skyline_balance_reconciliation_errors_total` reconciliation check).
+   *
+   * Runs on a caller-supplied client so it can be composed into a larger
+   * transaction (see `unlockItemAtomic`, which needs the ownership insert to
+   * commit or roll back together with the spend). The caller owns
+   * BEGIN/COMMIT/ROLLBACK; this method neither opens nor closes a transaction,
+   * and signals insufficient funds by throwing so the caller's ROLLBACK undoes
+   * everything it did.
+   */
+  private async applyLedgerEntryTx(
+    client: PoolClient,
+    entryData: {
+      playerId: string;
+      currency: 'chips' | 'cores';
+      delta: number;
+      reason: any;
+      idempotencyKey: string;
+    }
+  ): Promise<{ balance: EconomyBalanceModel; entry: LedgerEntryModel; isDuplicate: boolean }> {
+    const existingEntry = await client.query(
+      `SELECT * FROM ledger_entry WHERE player_id = $1 AND idempotency_key = $2`,
+      [entryData.playerId, entryData.idempotencyKey]
+    );
+    if (existingEntry.rows.length > 0) {
+      const balRes = await client.query(`SELECT * FROM economy_balance WHERE player_id = $1`, [entryData.playerId]);
+      return {
+        balance: this.mapBalance(balRes.rows[0]),
+        entry: this.mapLedgerEntry(existingEntry.rows[0]),
+        isDuplicate: true
+      };
+    }
+
+    const balRes = await client.query(
+      `SELECT * FROM economy_balance WHERE player_id = $1 FOR UPDATE`,
+      [entryData.playerId]
+    );
+    let balance = balRes.rows[0];
+    if (!balance) {
+      const initRes = await client.query(
+        `INSERT INTO economy_balance (player_id, chips, cores, updated_at)
+         VALUES ($1, 0, 0, NOW()) RETURNING *`,
+        [entryData.playerId]
+      );
+      balance = initRes.rows[0];
+    }
+
+    const currentChips = parseInt(balance.chips, 10);
+    const currentCores = parseInt(balance.cores, 10);
+
+    const newChips = entryData.currency === 'chips' ? currentChips + entryData.delta : currentChips;
+    const newCores = entryData.currency === 'cores' ? currentCores + entryData.delta : currentCores;
+
+    if (newChips < 0 || newCores < 0) {
+      const err: any = new Error('Insufficient balance');
+      err.code = 'INSUFFICIENT_BALANCE';
+      err.details = {
+        required: Math.abs(entryData.delta),
+        available: entryData.currency === 'chips' ? currentChips : currentCores
+      };
+      throw err;
+    }
+
+    const updatedBalRes = await client.query(
+      `UPDATE economy_balance SET chips = $1, cores = $2, updated_at = NOW() WHERE player_id = $3 RETURNING *`,
+      [newChips, newCores, entryData.playerId]
+    );
+
+    const entryId = uuidv4();
+    const insertEntryRes = await client.query(
+      `INSERT INTO ledger_entry (entry_id, player_id, currency, delta, reason, idempotency_key, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       RETURNING *`,
+      [entryId, entryData.playerId, entryData.currency, entryData.delta, entryData.reason, entryData.idempotencyKey]
+    );
+
+    return {
+      balance: this.mapBalance(updatedBalRes.rows[0]),
+      entry: this.mapLedgerEntry(insertEntryRes.rows[0]),
+      isDuplicate: false
+    };
+  }
+
   async applyLedgerEntry(entryData: {
     playerId: string;
     currency: 'chips' | 'cores';
@@ -195,68 +285,9 @@ export class PostgresDatabase implements IDatabase {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-
-      const existingEntry = await client.query(
-        `SELECT * FROM ledger_entry WHERE player_id = $1 AND idempotency_key = $2`,
-        [entryData.playerId, entryData.idempotencyKey]
-      );
-      if (existingEntry.rows.length > 0) {
-        const balRes = await client.query(`SELECT * FROM economy_balance WHERE player_id = $1`, [entryData.playerId]);
-        await client.query('COMMIT');
-        return {
-          balance: this.mapBalance(balRes.rows[0]),
-          entry: this.mapLedgerEntry(existingEntry.rows[0]),
-          isDuplicate: true
-        };
-      }
-
-      let balRes = await client.query(
-        `SELECT * FROM economy_balance WHERE player_id = $1 FOR UPDATE`,
-        [entryData.playerId]
-      );
-      let balance = balRes.rows[0];
-      if (!balance) {
-        const initRes = await client.query(
-          `INSERT INTO economy_balance (player_id, chips, cores, updated_at)
-           VALUES ($1, 0, 0, NOW()) RETURNING *`,
-          [entryData.playerId]
-        );
-        balance = initRes.rows[0];
-      }
-
-      let currentChips = parseInt(balance.chips, 10);
-      let currentCores = parseInt(balance.cores, 10);
-
-      const newChips = entryData.currency === 'chips' ? currentChips + entryData.delta : currentChips;
-      const newCores = entryData.currency === 'cores' ? currentCores + entryData.delta : currentCores;
-
-      if (newChips < 0 || newCores < 0) {
-        await client.query('ROLLBACK');
-        const err: any = new Error('Insufficient balance');
-        err.code = 'INSUFFICIENT_BALANCE';
-        throw err;
-      }
-
-      const updatedBalRes = await client.query(
-        `UPDATE economy_balance SET chips = $1, cores = $2, updated_at = NOW() WHERE player_id = $3 RETURNING *`,
-        [newChips, newCores, entryData.playerId]
-      );
-
-      const entryId = uuidv4();
-      const insertEntryRes = await client.query(
-        `INSERT INTO ledger_entry (entry_id, player_id, currency, delta, reason, idempotency_key, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())
-         RETURNING *`,
-        [entryId, entryData.playerId, entryData.currency, entryData.delta, entryData.reason, entryData.idempotencyKey]
-      );
-
+      const result = await this.applyLedgerEntryTx(client, entryData);
       await client.query('COMMIT');
-
-      return {
-        balance: this.mapBalance(updatedBalRes.rows[0]),
-        entry: this.mapLedgerEntry(insertEntryRes.rows[0]),
-        isDuplicate: false
-      };
+      return result;
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -284,6 +315,25 @@ export class PostgresDatabase implements IDatabase {
     const nextCursor = hasMore ? items[items.length - 1]?.entry_id : undefined;
 
     return { items, nextCursor };
+  }
+
+  async getLedgerSums(playerId: string): Promise<{ chips: number; cores: number }> {
+    // Read-only aggregate; no lock is taken because a concurrent write would at
+    // worst produce a transient mismatch, and the reconciliation check treats a
+    // single divergent read as a signal, not as a transactional guarantee.
+    const res = await this.pool.query(
+      `SELECT currency, COALESCE(SUM(delta), 0) AS total
+         FROM ledger_entry
+        WHERE player_id = $1
+        GROUP BY currency`,
+      [playerId]
+    );
+    const sums = { chips: 0, cores: 0 };
+    for (const row of res.rows) {
+      if (row.currency === 'chips') sums.chips = Number(row.total);
+      else if (row.currency === 'cores') sums.cores = Number(row.total);
+    }
+    return sums;
   }
 
   async createRun(runData: Omit<RunModel, 'run_id' | 'server_received_at'>): Promise<{ run: RunModel; isDuplicate: boolean }> {
@@ -391,33 +441,33 @@ export class PostgresDatabase implements IDatabase {
         [playerId, itemType, itemId]
       );
       if (ownedRes.rows.length > 0) {
+        const ownedBalRes = await client.query(`SELECT * FROM economy_balance WHERE player_id = $1`, [playerId]);
         await client.query('COMMIT');
-        const balance = await this.getBalance(playerId);
+        const balance =
+          ownedBalRes.rows.length > 0 ? this.mapBalance(ownedBalRes.rows[0]) : await this.initBalance(playerId, 0, 0);
         return { ok: true, balance };
       }
 
-      // Check cores balance
-      const balRes = await client.query(
-        `SELECT COALESCE(SUM(delta), 0) as cores FROM economy_ledger WHERE player_id = $1 AND currency = 'cores'`,
-        [playerId]
-      );
-      const availableCores = parseInt(balRes.rows[0]?.cores || '0', 10);
-      if (availableCores < cost) {
-        await client.query('ROLLBACK');
-        const err: any = new Error('Insufficient Cores balance');
-        err.code = 'INSUFFICIENT_BALANCE';
-        err.details = { required: cost, available: availableCores };
-        throw err;
-      }
-
-      // Insert ledger entry
-      const entryId = uuidv4();
-      await client.query(
-        `INSERT INTO economy_ledger (entry_id, player_id, currency, delta, reason, idempotency_key, created_at)
-         VALUES ($1, $2, 'cores', $3, 'unlock_spend', $4, NOW())
-         ON CONFLICT (player_id, idempotency_key) DO NOTHING`,
-        [entryId, playerId, -cost, idempotencyKey]
-      );
+      // RC-01: the spend goes through the shared applyLedgerEntryTx path, which
+      // writes the ledger row AND the materialized economy_balance row under the
+      // same FOR UPDATE lock. The previous hand-rolled INSERT wrote only the
+      // ledger, leaving economy_balance permanently stale (and higher than the
+      // player actually had). Passing this transaction's client keeps the
+      // affordability check, the spend and the ownership insert atomic together:
+      // any throw below reaches the catch, which rolls the whole thing back.
+      //
+      // Affordability is now decided by applyLedgerEntryTx's non-negative guard
+      // over economy_balance — the materialized row that CLAUDE.md §1 makes
+      // authoritative — instead of a separate COALESCE(SUM(delta)) over the
+      // ledger. With both writes on one path the two are equal by construction,
+      // so this is the same decision made once rather than twice.
+      const ledgerResult = await this.applyLedgerEntryTx(client, {
+        playerId,
+        currency: 'cores',
+        delta: -cost,
+        reason: 'unlock_spend',
+        idempotencyKey
+      });
 
       // Insert ownership
       await client.query(
@@ -428,8 +478,7 @@ export class PostgresDatabase implements IDatabase {
       );
 
       await client.query('COMMIT');
-      const balance = await this.getBalance(playerId);
-      return { ok: true, balance };
+      return { ok: true, balance: ledgerResult.balance };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;

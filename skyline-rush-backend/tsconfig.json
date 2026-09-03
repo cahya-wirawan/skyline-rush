@@ -25,6 +25,8 @@
       "@libs/shared-types/*": ["libs/shared-types/*"],
       "@libs/auth": ["libs/auth/index"],
       "@libs/auth/*": ["libs/auth/*"],
+      "@libs/metrics": ["libs/metrics/index"],
+      "@libs/metrics/*": ["libs/metrics/*"],
       "@apps/*": ["apps/*"]
     }
   },

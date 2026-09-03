@@ -1,0 +1,30 @@
+{
+  "task": "Build Phase 3 (Polish, Submission, Launch) deliverables scoped to what is verifiable within this repository: (1) WCAG-AA accessibility pass on the web client's non-gameplay screens (contrast audit + ARIA labeling + keyboard/focus support + prefers-reduced-motion) per NFR-006; (2) render performance instrumentation on the Web Runner (frame-time and input-latency tracking) protecting the NFR-001 60fps / 80ms-input-latency targets; (3) production observability: Prometheus alerting rules and Grafana dashboard JSON implementing the alerts and dashboards specified in 12_ANALYTICS_AND_OBSERVABILITY.md; (4) App Store listing & compliance assets (listing copy, privacy nutrition label mapping, IAP odds disclosure verification) as new build-package documents; (5) execute build-package/18_RELEASE_CHECKLIST.md against the current repo state, classifying every item as Executable-now (with real evidence) or Deferred (with an honest reason) — no App Store Connect account, device farm, or on-call system exists in this environment.",
+  "iteration": 2,
+  "max_iterations": 4,
+  "minimum_judge_score": 0.9,
+  "history": [
+    {
+      "iteration": 1,
+      "judge_score": 0.729,
+      "verdict": "REVISE",
+      "blocking_issues": [
+        "CRITICAL: postgres-db.ts unlockItemAtomic wrote a ledger row but never updated the materialized economy_balance column (CLAUDE.md §1 violation); invisible to the 48-test suite because it runs exclusively against InMemoryDatabase, never PostgresDatabase.",
+        "HIGH: no test exercised PostgresDatabase.unlockItemAtomic at all.",
+        "MEDIUM: stale contrast evidence in build-package/24_RELEASE_CHECKLIST_STATUS.md and 25_ACCESSIBILITY_STATE_AUDIT.md claiming the pre-hardening '36/36/0 exempt' result.",
+        "LOW: 7+ stale file:line citations in build-package/24_RELEASE_CHECKLIST_STATUS.md from an earlier partial fix that was itself an overclaim."
+      ],
+      "timestamp": "2026-09-03T10:41:00+00:00"
+    },
+    {
+      "iteration": 2,
+      "judge_score": 0.923,
+      "verdict": "PASS",
+      "blocking_issues": [],
+      "timestamp": "2026-09-03T11:58:00+00:00"
+    }
+  ],
+  "verdict": "PASS",
+  "created_at": "2026-09-03T09:05:00+00:00",
+  "updated_at": "2026-09-03T11:58:00+00:00"
+}

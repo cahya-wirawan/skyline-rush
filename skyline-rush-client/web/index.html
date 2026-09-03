@@ -135,14 +135,14 @@
                 <h4>STARTER BUNDLE</h4>
                 <p class="card-desc">10,000 Chips + 50 Cores + Neon Trail</p>
                 <div class="card-price">$0.99</div>
-                <button class="btn btn-primary btn-sm" onclick="window.game.buyPack('starter_pack', 50, 0.99)">ACQUIRE</button>
+                <button class="btn btn-primary btn-sm" aria-label="Acquire Starter Bundle: 10,000 Chips, 50 Cores and Neon Trail for $0.99" onclick="window.game.buyPack('starter_pack', 50, 0.99)">ACQUIRE</button>
               </div>
               <div class="shop-card special-card">
                 <span class="card-badge badge-popular">PERMANENT</span>
                 <h4>AD SUPPRESSION</h4>
                 <p class="card-desc">Removes all interstitial video ads forever</p>
                 <div class="card-price">$4.99</div>
-                <button class="btn btn-accent btn-sm" onclick="window.game.buyPack('remove_interstitials', 0, 4.99)">REMOVE ADS</button>
+                <button class="btn btn-accent btn-sm" aria-label="Purchase Ad Suppression, removes all interstitial video ads permanently, for $4.99" onclick="window.game.buyPack('remove_interstitials', 0, 4.99)">REMOVE ADS</button>
               </div>
             </div>
           </div>
@@ -155,33 +155,33 @@
                 <h4>50 CORES</h4>
                 <div class="core-amount">🔷 50</div>
                 <div class="card-price">$0.99</div>
-                <button class="btn btn-secondary btn-sm" onclick="window.game.buyPack('cores_small', 50, 0.99)">BUY</button>
+                <button class="btn btn-secondary btn-sm" aria-label="Buy 50 Cores for $0.99" onclick="window.game.buyPack('cores_small', 50, 0.99)">BUY</button>
               </div>
               <div class="shop-card highlighted-card">
                 <span class="card-badge badge-popular">POPULAR</span>
                 <h4>120 CORES</h4>
                 <div class="core-amount">🔷 120</div>
                 <div class="card-price">$1.99</div>
-                <button class="btn btn-primary btn-sm" onclick="window.game.buyPack('cores_medium', 120, 1.99)">BUY</button>
+                <button class="btn btn-primary btn-sm" aria-label="Buy 120 Cores for $1.99" onclick="window.game.buyPack('cores_medium', 120, 1.99)">BUY</button>
               </div>
               <div class="shop-card">
                 <h4>260 CORES</h4>
                 <div class="core-amount">🔷 260</div>
                 <div class="card-price">$4.99</div>
-                <button class="btn btn-secondary btn-sm" onclick="window.game.buyPack('cores_large', 260, 4.99)">BUY</button>
+                <button class="btn btn-secondary btn-sm" aria-label="Buy 260 Cores for $4.99" onclick="window.game.buyPack('cores_large', 260, 4.99)">BUY</button>
               </div>
               <div class="shop-card highlighted-card">
                 <span class="card-badge badge-value">BEST VALUE</span>
                 <h4>600 CORES</h4>
                 <div class="core-amount">🔷 600</div>
                 <div class="card-price">$9.99</div>
-                <button class="btn btn-primary btn-sm" onclick="window.game.buyPack('cores_xl', 600, 9.99)">BUY</button>
+                <button class="btn btn-primary btn-sm" aria-label="Buy 600 Cores for $9.99" onclick="window.game.buyPack('cores_xl', 600, 9.99)">BUY</button>
               </div>
               <div class="shop-card">
                 <h4>1,400 CORES</h4>
                 <div class="core-amount">🔷 1400</div>
                 <div class="card-price">$19.99</div>
-                <button class="btn btn-secondary btn-sm" onclick="window.game.buyPack('cores_vault', 1400, 19.99)">BUY</button>
+                <button class="btn btn-secondary btn-sm" aria-label="Buy 1,400 Cores for $19.99" onclick="window.game.buyPack('cores_vault', 1400, 19.99)">BUY</button>
               </div>
             </div>
           </div>
@@ -233,8 +233,8 @@
           <button id="btnCloseRoster" class="icon-close" aria-label="Close Roster">✕</button>
         </div>
         <div class="roster-tabs">
-          <button id="tabRunners" class="tab-btn active">COURIERS</button>
-          <button id="tabBoards" class="tab-btn">GRAV-BOARDS</button>
+          <button id="tabRunners" class="tab-btn active" role="tab" aria-selected="true" aria-controls="rosterCardsContainer" aria-label="Show couriers roster tab">COURIERS</button>
+          <button id="tabBoards" class="tab-btn" role="tab" aria-selected="false" aria-controls="rosterCardsContainer" aria-label="Show grav-boards roster tab">GRAV-BOARDS</button>
         </div>
         <div id="rosterCardsContainer" class="roster-grid">
           <!-- Populated dynamically -->
@@ -268,14 +268,14 @@
             <div class="setting-row">
               <label for="sliderSfx">SFX Volume</label>
               <div class="slider-container">
-                <input type="range" id="sliderSfx" min="0" max="100" value="80">
+                <input type="range" id="sliderSfx" min="0" max="100" value="80" aria-valuemin="0" aria-valuemax="100" aria-valuenow="80" aria-valuetext="80 percent">
                 <span id="valSfx">80%</span>
               </div>
             </div>
             <div class="setting-row">
               <label for="sliderMusic">Synth Bassline & Arp</label>
               <div class="slider-container">
-                <input type="range" id="sliderMusic" min="0" max="100" value="70">
+                <input type="range" id="sliderMusic" min="0" max="100" value="70" aria-valuemin="0" aria-valuemax="100" aria-valuenow="70" aria-valuetext="70 percent">
                 <span id="valMusic">70%</span>
               </div>
             </div>
@@ -298,9 +298,9 @@
           <div class="settings-section">
             <h3 class="settings-title">AGE TIER (SERVER ENFORCED)</h3>
             <div class="age-bucket-selector">
-              <button class="age-option-btn" data-bucket="under_13">Under 13 (Child Privacy)</button>
-              <button class="age-option-btn" data-bucket="13_15">13–15 (Teen Guarded)</button>
-              <button class="age-option-btn active" data-bucket="16_plus">16+ (Standard)</button>
+              <button class="age-option-btn" data-bucket="under_13" aria-pressed="false" aria-label="Set age tier to under 13, child privacy mode">Under 13 (Child Privacy)</button>
+              <button class="age-option-btn" data-bucket="13_15" aria-pressed="false" aria-label="Set age tier to 13 to 15, teen guarded mode">13–15 (Teen Guarded)</button>
+              <button class="age-option-btn active" data-bucket="16_plus" aria-pressed="true" aria-label="Set age tier to 16 and over, standard mode">16+ (Standard)</button>
             </div>
           </div>
 
@@ -310,10 +310,10 @@
             <p class="privacy-desc">Export a structured JSON copy of all account history or permanently wipe data.</p>
             <div class="privacy-buttons">
               <button id="btnExportData" class="btn btn-secondary">
-                <span>📥</span> EXPORT DATA (GDPR ART. 15)
+                <span aria-hidden="true">📥</span> EXPORT DATA (GDPR ART. 15)
               </button>
               <button id="btnDeleteAccount" class="btn btn-danger">
-                <span>⚠️</span> PERMANENT DATA WIPE (GDPR ART. 17)
+                <span aria-hidden="true">⚠️</span> PERMANENT DATA WIPE (GDPR ART. 17)
               </button>
             </div>
           </div>
@@ -326,11 +326,11 @@
       <div class="modal-card">
         <div class="modal-header">
           <h2>LINK COURIER FRIEND</h2>
-          <button id="btnCloseAddFriend" class="icon-close" aria-label="Cancel">✕</button>
+          <button id="btnCloseAddFriend" class="icon-close" aria-label="Cancel adding a friend">✕</button>
         </div>
         <p class="card-desc">Enter courier friend code (e.g. SKY-7Q2X):</p>
-        <input type="text" id="inputFriendCode" class="neon-input" placeholder="SKY-XXXX" maxlength="10">
-        <div id="addFriendStatus" class="error-msg" style="display: none;"></div>
+        <input type="text" id="inputFriendCode" class="neon-input" aria-label="Courier friend code, format SKY dash four characters" placeholder="SKY-XXXX" maxlength="10">
+        <div id="addFriendStatus" class="error-msg" role="alert" aria-live="assertive" style="display: none;"></div>
         <button id="btnConfirmAddFriend" class="btn btn-primary" style="margin-top: 14px;">CONNECT FRIEND</button>
       </div>
     </div>
