@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { AuthService } from '@libs/auth';
@@ -159,7 +160,18 @@ export function createGatewayApp(dbInstance?: IDatabase): express.Express {
     res.send(body);
   });
 
-  const webDir = path.resolve(__dirname, '../../../skyline-rush-client/web');
+  // __dirname shifts depending on how this runs: ts-node against source
+  // (apps/gateway), a locally-compiled run (dist/apps/gateway, one extra
+  // level of nesting), or the Docker image, which has no sibling
+  // skyline-rush-client checkout at all and instead gets client/web/
+  // copied in next to the compiled output at build time. Try each in order
+  // and fall back to the source-tree layout if none exist yet.
+  const webDirCandidates = [
+    path.resolve(__dirname, '../../../skyline-rush-client/web'), // ts-node, source tree
+    path.resolve(__dirname, '../../../web'),                     // Docker image (see Dockerfile)
+    path.resolve(__dirname, '../../../../skyline-rush-client/web') // compiled dist/, run locally outside Docker
+  ];
+  const webDir = webDirCandidates.find(p => fs.existsSync(p)) || webDirCandidates[0];
   app.use(express.static(webDir));
 
   const db = dbInstance || getDatabase();

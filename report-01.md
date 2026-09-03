@@ -514,3 +514,72 @@ These were explicitly evaluated and accepted as out-of-scope for this pass, not 
 ## 6. Conclusion
 
 Phase 3 passed the Gauntlet Loop at **0.923 / 1.000** after one revision cycle. The round's real value was structural: an adversarial, multi-agent, iterated review process caught a CLAUDE.md §1 economy-integrity violation that had already survived four independent review stages (self-testing, an independent Critic, an independent Red-Team, and an independent Verifier) — because none of them exercised the code path where the bug lived. The second iteration didn't just patch the symptom; it collapsed two duplicated currency-mutation code paths into one shared, transactionally-correct path, and added a regression test proven (via reconstruction) to actually catch that class of defect. Combined with the Phase 0/1 and Options A/B/C round (0.978/1.000) and the Web Runner v3 visual overhaul, this repository's design blueprint, backend, and playable client have now been through three independent adversarial verification passes.
+
+---
+
+# Skyline Rush — Live Deployment Verification (Docker Compose Production Stack)
+
+**Execution Date:** 2026-09-03
+**Methodology:** Direct implementation and manual verification against a genuinely running local stack (Docker Desktop, `docker-compose.prod.yml`) — not a Gauntlet Loop round. No Acceptance Criteria were added; this exercises what Phase 0/1, Options A/B/C, and Phase 3 had only verified against `InMemoryDatabase`, a mocked wire protocol, or static config reading.
+
+## 1. Why this pass exists
+
+Every prior verification round — including two full adversarial Gauntlet Loop iterations for Phase 3 — ran exclusively against `InMemoryDatabase` and, for the one test that specifically targeted `PostgresDatabase`, a hand-written fake of the Postgres wire protocol (`FakePg` in `tests/ledger-balance-invariant.spec.ts`). Nobody had ever built the production Docker image or run the backend against a real PostgreSQL server. This pass does exactly that: `docker compose -f docker-compose.prod.yml up -d --build` — real PostgreSQL 16, real Redis 7, the compiled backend gateway image, and Nginx with TLS — then exercises the live stack end-to-end (health checks, real guest auth writing to real Postgres, `/metrics`, the playable web client, and the previously-`describe.skip`'d live-Postgres regression layer from Phase 3).
+
+## 2. Defects found only by running the real thing
+
+| ID | Defect | Why prior verification missed it |
+|:---|:---|:---|
+| **DEP-01** | `skyline-rush-backend/package-lock.json` was out of sync with `package.json` (Phase 3 added `js-yaml` as a devDependency without regenerating the lockfile). `npm ci` — the reproducible-install command the Dockerfile correctly uses — refused to install, failing the image build outright. | `npm test` locally uses `npm install`'s permissive resolution, not `npm ci`'s strict lockfile match. No prior round ever ran `npm ci`. |
+| **DEP-02** | The compiled backend (`dist/apps/gateway/main.js`) imports via TypeScript path aliases (`@libs/auth`, `@libs/db`, etc.). `tsc` does not rewrite these to relative paths, and the Dockerfile's runtime `CMD` ran plain `node dist/apps/gateway/main.js` with no alias resolver. The container crash-looped on boot: `Error: Cannot find module '@libs/auth'`. Compounding this, `tsconfig-paths` (the package that *would* resolve aliases at runtime) was a devDependency, so `npm ci --only=production` stripped it from the image even if the `CMD` had used it. | Local dev always runs via `ts-node -r tsconfig-paths/register`, which resolves aliases transparently. `npm run build && npm test` never runs the compiled output through plain `node`, so this was invisible to every automated check. |
+| **DEP-03** | The gateway's static web-client serving (`app.use(express.static(webDir))`) resolved `webDir` via `path.resolve(__dirname, '../../../skyline-rush-client/web')` — a path that only exists in the *source* tree. The Docker image never copied `skyline-rush-client/web` into the container at all (the build context, `context: .`, was scoped to `skyline-rush-backend/` and structurally couldn't reach the sibling directory), and even a corrected copy location would have needed different `../` math against the compiled `dist/` directory depth. The playable game 404'd at the container's own `/` — confirmed to originate from the gateway itself, not Nginx, via a direct in-container request bypassing the reverse proxy. | No prior round built or ran the Docker image; `docker-compose.prod.yml` was verified only by reading its YAML, never by executing it. |
+| **DEP-04** | The Phase 3 `ledger-balance-invariant.spec.ts`'s live-Postgres layer (`describe.skip`'d for lack of a database) failed on its first real run: it seeds a test balance with `reason: 'grant'`, but `ledger_entry`'s schema `CHECK` constraint only permits `'run_pickup', 'contract_reward', 'supply_drop', 'purchase', 'redeploy_spend', 'refund_reversal', 'admin_adjustment', 'unlock_spend'` — `'grant'` isn't one of them. `FakePg`, the wire-protocol fake used in that same file's other two test layers, didn't enforce this constraint, so it accepted the invalid value silently. | This is precisely the gap the test file's own header comment disclosed in advance ("what the fake does NOT cover... real constraint... behaviour... needs a live server") — evidence the disclosed limitation was real, not hypothetical. Two independent Judge passes and three independent Verifier passes all read the file and assessed the fake's design as sound; none could execute layer 3 to surface this specific value. |
+
+None of these are logic bugs in the application's business rules — DEP-01 through DEP-03 are packaging/deployment defects that would have made the backend **fail to start at all** under `docker-compose.prod.yml` or the Kubernetes manifests (which build from the same `Dockerfile`), and DEP-04 is a test-only data-seeding bug (production code already used the correct `'unlock_spend'` reason; only the test's own seed value was wrong).
+
+## 3. Fixes applied
+
+- **DEP-01**: Regenerated `package-lock.json` via `npm install`; confirmed `npm ci` now succeeds.
+- **DEP-02**: Moved `tsconfig-paths` from `devDependencies` to `dependencies`; the Dockerfile's runner stage now copies `tsconfig.json` and sets `ENV TS_NODE_BASEURL=./dist` before running `node -r tsconfig-paths/register dist/apps/gateway/main.js`, so the alias resolver is present in the image and points at the compiled output rather than the source tree.
+- **DEP-03**: `docker-compose.prod.yml`'s gateway build context changed from `.` to `..` (the repository root), with `dockerfile: skyline-rush-backend/Dockerfile`; the Dockerfile now `COPY skyline-rush-client/web ./web` into the runner image. `gateway.app.ts`'s static-file path resolution was changed from a single hardcoded `__dirname`-relative path to an ordered list of candidates (source-tree ts-node layout, the new Docker-image layout, and a locally-compiled-outside-Docker layout), picked by the first one that exists on disk — robust to all three ways this code actually runs. A repository-root `.dockerignore` was added (none existed before), excluding `.git`, `node_modules`, `dist`, and every `.env`/`.env.*` file from all image layers.
+- **DEP-04**: The test's three `reason: 'grant'` seed values were corrected to `reason: 'admin_adjustment'` (the schema-valid reason for seeding a test balance out of nothing). `FakePg`'s `INSERT INTO ledger_entry` handler was additionally hardened to enforce the same `currency`/`reason` `CHECK` constraints the real schema does, so an invalid value now fails immediately at layers 1–2 instead of silently passing until a live database is available — closing the specific gap DEP-04 exposed rather than only patching the one call site that hit it.
+
+## 4. Live verification evidence
+
+```bash
+$ docker compose -f docker-compose.prod.yml up -d --build
+# postgres: healthy · redis: healthy · gateway: running · nginx: running
+
+$ docker compose exec postgres psql -U skylinerush_prod -d skylinerush_prod_db -c "\dt"
+# 13 tables present — schema applied automatically via docker-entrypoint-initdb.d
+
+$ curl -sk https://localhost/health/ready
+{"status":"ready","checks":{"database":"up","cache":"up"},"uptime":...}
+
+$ curl -sk -X POST https://localhost/v1/auth/guest -d '{"guest_device_id":"<uuid>","age_bucket":"16_plus"}'
+{"player_id":"26a0c59e-...","access_token":"eyJ...","refresh_token":"eyJ...","age_bucket":"16_plus"}
+# confirmed persisted: SELECT * FROM player -> 1 row, matching player_id
+
+$ curl -sk -o /dev/null -w "%{http_code} %{content_type}\n" https://localhost/
+200 text/html; charset=UTF-8
+$ curl -sk -o /dev/null -w "%{http_code} %{content_type}\n" https://localhost/game.js
+200 application/javascript; charset=UTF-8
+# game loaded and played in a real browser tab through this exact stack; zero console errors
+
+$ DATABASE_URL=postgresql://skylinerush_prod:***@127.0.0.1:5432/skylinerush_prod_db npx jest --runInBand
+Test Suites: 2 passed, 2 total
+Tests:       55 passed, 55 total          # the layer-3 live-Postgres test now RUNS and PASSES, not skipped
+
+$ cd skyline-rush-contracts && npm test    # 25 paths, both schemas — PASS
+$ cd skyline-rush-client && npm test       # AC-13..16, contrast, a11y, PerfStats — PASS
+```
+
+## 5. Standing gap confirmed live, not just by static read
+
+`build-package/24_RELEASE_CHECKLIST_STATUS.md`'s TLS row already documented, from static config reading, that Nginx's port-80 server block proxies to the gateway in cleartext instead of redirecting to HTTPS. This pass independently reproduced that live: `curl http://localhost/health/live` returns `200` directly, with no `301` redirect, confirming the documented gap is real and still open. Not fixed here — out of scope for a deployment-verification pass, tracked in that doc's existing "Fix required" note.
+
+## 6. What this does and doesn't establish
+
+This confirms the backend genuinely boots, serves the playable client, and correctly persists economy state against real PostgreSQL and Redis — **on this machine**, via Docker Compose. It is not a production cloud deployment: there is no public DNS, no real TLS certificate (the stack uses a self-signed cert), no CI pipeline that runs `docker compose up` on every change, and the Kubernetes manifests under `k8s/` (which build from the same now-fixed `Dockerfile`) remain unexercised against a real cluster. `build-package/24_RELEASE_CHECKLIST_STATUS.md`'s D5-deferred items (backup/restore drills, live on-call routing, soft-launch traffic) are unaffected by this pass and remain correctly deferred.
+
+**Conclusion:** three real packaging defects (DEP-01, DEP-02, DEP-03) and one real test-data defect (DEP-04) existed in code that had already passed two full adversarial Gauntlet Loop iterations, multiple independent Critic/Red-Team/Verifier/Judge passes, and 55 previously-green tests — because none of that scrutiny had ever executed a reproducible build or a real database. All four are now fixed, and the fixes are load-bearing: the backend would not have started under `docker-compose.prod.yml` or the Kubernetes manifests before this pass.

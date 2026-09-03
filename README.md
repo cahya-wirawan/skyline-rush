@@ -12,6 +12,8 @@ Deliberately differentiated from reference runners (e.g. *Subway Surfers*), Skyl
 
 **Phase 3 (Polish, Submission, Launch)** — accessibility enforcement, client performance instrumentation, backend observability (alerting rules + Grafana dashboards), App Store submission documentation, and a line-by-line release-checklist audit — passed its own adversarial Gauntlet Loop at **0.923 / 1.000** (see [`report-01.md`](report-01.md)) after a first iteration caught and fixed a critical server-side economy bug. Its status/audit documents record what is verifiable in this environment and what is explicitly deferred to a physical device or a live deployment — see [`24_RELEASE_CHECKLIST_STATUS.md`](build-package/24_RELEASE_CHECKLIST_STATUS.md).
 
+**The production Docker Compose stack has been built and run for real** — real PostgreSQL 16, real Redis 7, the compiled backend, and Nginx — with the playable web client, guest auth, and economy writes all confirmed working end-to-end against genuine infrastructure (see `report-01.md`'s "Live Deployment Verification" section). That pass found and fixed four real packaging/test defects that two full adversarial Gauntlet Loop iterations had missed, because none of them had ever executed a reproducible build or a real database.
+
 ```
 skyline-rush/
 ├── build-package/             # Complete build-ready product blueprint (PRD, UX specs, test plans,

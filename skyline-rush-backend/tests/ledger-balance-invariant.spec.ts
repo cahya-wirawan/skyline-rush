@@ -15,12 +15,19 @@
  * stages because `tests/acceptance.spec.ts` instantiates only
  * `InMemoryDatabase` — the Postgres SQL was never executed by anything.
  *
- * WHY THERE IS NO LIVE-POSTGRES TEST HERE
- * ---------------------------------------
- * This environment has no reachable PostgreSQL server: neither `DATABASE_URL`
- * nor `POSTGRES_URL` is set, `docker-compose.prod.yml` defines no test service
- * that CI starts, and adding a container/driver harness would mean a new
- * dev-dependency. So the coverage is layered:
+ * LIVE-POSTGRES COVERAGE
+ * -----------------------
+ * Layer 3 below runs for real against `docker-compose.prod.yml`'s Postgres
+ * service when `DATABASE_URL`/`POSTGRES_URL` is set (see
+ * skyline-rush-backend/README.md's Docker Compose section) — it is skipped,
+ * not silently passed, when the variable is absent, e.g. in a CI job with no
+ * database provisioned. Running it for real against that stack is exactly
+ * what caught `FakePg` accepting a `ledger_entry.reason` value the schema's
+ * CHECK constraint doesn't allow (`'grant'`, fixed to `'admin_adjustment'`
+ * below) — the fake now enforces the same CHECK constraints the schema does
+ * (see `VALID_CURRENCIES`/`VALID_LEDGER_REASONS`), so that specific gap is
+ * closed, but it's evidence the layer-3 escape hatch matters, not a reason
+ * to remove it. So the coverage is layered:
  *
  *   1. `describe('invariant — every IDatabase implementation')` runs the
  *      implementation-agnostic assertion (ledger sum === materialized balance
@@ -40,7 +47,7 @@
  *      invariant end-to-end against a live `PostgresDatabase`. It is skipped,
  *      not silently passed, when the variable is absent.
  *
- * What the fake does NOT cover, stated plainly: real `FOR UPDATE` lock
+ * What the fake still does NOT cover, stated plainly: real `FOR UPDATE` lock
  * contention between concurrent connections, real `ON CONFLICT` constraint
  * behaviour, and real rollback semantics. Those need a live server (layer 3).
  */
@@ -57,6 +64,19 @@ import { IDatabase } from '../libs/db/database.interface';
 // tells it to write, which is the point — it cannot paper over a missing UPDATE.
 // ---------------------------------------------------------------------------
 interface FakeRow { [k: string]: any }
+
+// Mirrors libs/db/migrations/001_initial_schema.sql's ledger_entry CHECK
+// constraints. A real Postgres server enforces these; this fake didn't,
+// which is exactly how a test seeding reason: 'grant' (not a valid value —
+// the schema only allows the values below) passed here silently and then
+// failed only against the live-Postgres layer. Kept in sync with the schema
+// deliberately, not derived from it, so a schema change that adds/removes a
+// reason is a one-line diff in both places rather than invisible drift.
+const VALID_CURRENCIES = new Set(['chips', 'cores']);
+const VALID_LEDGER_REASONS = new Set([
+  'run_pickup', 'contract_reward', 'supply_drop', 'purchase',
+  'redeploy_spend', 'refund_reversal', 'admin_adjustment', 'unlock_spend'
+]);
 
 class FakePg {
   balances = new Map<string, FakeRow>();
@@ -132,6 +152,16 @@ class FakePg {
     }
     if (/^INSERT INTO ledger_entry /.test(q)) {
       const [entry_id, player_id, currency, delta, reason, idempotency_key] = params;
+      if (!VALID_CURRENCIES.has(currency)) {
+        throw new Error(
+          `FakePg: new row for relation "ledger_entry" violates check constraint "ledger_entry_currency_check" (currency=${JSON.stringify(currency)})`
+        );
+      }
+      if (!VALID_LEDGER_REASONS.has(reason)) {
+        throw new Error(
+          `FakePg: new row for relation "ledger_entry" violates check constraint "ledger_entry_reason_check" (reason=${JSON.stringify(reason)})`
+        );
+      }
       const row: FakeRow = {
         entry_id,
         player_id,
@@ -239,7 +269,7 @@ describe('RC-02: ledger / materialized-balance invariant', () => {
           playerId,
           currency: 'cores',
           delta: 200,
-          reason: 'grant',
+          reason: 'admin_adjustment',
           idempotencyKey: uuidv4()
         });
         await assertLedgerMatchesBalance(db, playerId, `${impl.name} after funding`);
@@ -280,7 +310,7 @@ describe('RC-02: ledger / materialized-balance invariant', () => {
         playerId,
         currency: 'cores',
         delta: 200,
-        reason: 'grant',
+        reason: 'admin_adjustment',
         idempotencyKey: uuidv4()
       });
       // Reset the recorders so each test observes only its own statements.
@@ -381,7 +411,7 @@ describe('RC-02: ledger / materialized-balance invariant', () => {
         playerId: player.player_id,
         currency: 'cores',
         delta: 200,
-        reason: 'grant',
+        reason: 'admin_adjustment',
         idempotencyKey: uuidv4()
       });
 

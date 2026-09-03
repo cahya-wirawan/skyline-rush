@@ -1,0 +1,11 @@
+# Docker build context is the repository root (skyline-rush-backend's
+# docker-compose.prod.yml sets `context: ..`). Keep secrets, VCS metadata,
+# and local build/dependency artifacts out of every image layer.
+.git
+.gauntlet
+**/.env
+**/.env.*
+**/node_modules
+**/dist
+**/*.log
+skyline-rush-backend/nginx/certs

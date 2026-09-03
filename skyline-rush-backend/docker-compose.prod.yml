@@ -55,8 +55,10 @@ services:
 
   gateway:
     build:
-      context: .
-      dockerfile: Dockerfile
+      # Repo root, not this directory: the image also bundles the
+      # sibling skyline-rush-client/web playable client (see Dockerfile).
+      context: ..
+      dockerfile: skyline-rush-backend/Dockerfile
     container_name: skyline-rush-gateway-prod
     restart: always
     environment:

@@ -32,10 +32,25 @@ The server will start on port `3000` (or `PORT` env var). Navigating to `http://
 ## Production Deployment
 
 ### 1. Docker Compose Production
-Runs PostgreSQL 16 (persistent volume, healthcheck), Redis 7 (password authentication, AOF enabled), Backend Gateway (non-root `node` user), and Nginx reverse proxy with SSL termination on port 443:
+Runs PostgreSQL 16 (persistent volume, healthcheck), Redis 7 (password authentication, AOF enabled), Backend Gateway (non-root `node` user, bundles the playable web client from `../skyline-rush-client/web`), and Nginx reverse proxy with SSL termination on port 443. **Verified end-to-end** — real Postgres-backed guest auth, `/health/ready`, `/metrics`, and the playable web client all confirmed working through this exact stack.
+
+Create `skyline-rush-backend/.env` first (gitignored — never commit it) with real secrets, e.g.:
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+cat > .env <<EOF
+POSTGRES_USER=skylinerush_prod
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
+POSTGRES_DB=skylinerush_prod_db
+REDIS_PASSWORD=$(openssl rand -hex 24)
+JWT_SECRET=$(openssl rand -hex 32)
+REFRESH_SECRET=$(openssl rand -hex 32)
+PARENTAL_GATE_SECRET=$(openssl rand -hex 32)
+EOF
 ```
+Then, from `skyline-rush-backend/` (the gateway image's build context is the repository root, so this must be run from here, not the repo root itself):
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+The stack is reachable at `https://localhost` (self-signed cert — expect a browser warning) and `http://localhost` (same app, no TLS; the port-80 Nginx block does not currently redirect to HTTPS — see `build-package/24_RELEASE_CHECKLIST_STATUS.md`'s TLS row for the fix needed before a real deployment). Schema migrations apply automatically on first Postgres start via `docker-entrypoint-initdb.d`.
 
 ### 2. Kubernetes Production (`k8s/`)
 Deploy to a Kubernetes cluster using the 10-manifest suite:
