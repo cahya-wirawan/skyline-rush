@@ -37,6 +37,16 @@ namespace SkylineRush.Tests
     [TestFixture]
     public class MetaAndNetworkingTests
     {
+        // Unity's EditMode Test Framework (com.unity.test-framework 1.1.33) does not support
+        // [Test]-attributed methods that return Task the way vanilla NUnit does -- it fails every
+        // one with "Method has non-void return value, but no result is expected" rather than
+        // awaiting it. Every async call under test here (FakeHttpTransport.SendAsync) resolves
+        // synchronously via Task.FromResult with no real I/O or thread hops, so blocking on the
+        // outermost call via GetAwaiter().GetResult() is safe and carries no deadlock risk. Test
+        // methods stay plain `void`; RunSync is the only place the block happens.
+        private static void RunSync(Task task) => task.GetAwaiter().GetResult();
+        private static T RunSync<T>(Task<T> task) => task.GetAwaiter().GetResult();
+
         private static SkylineRushApiService MakeService(out FakeHttpTransport transport)
         {
             transport = new FakeHttpTransport();
@@ -50,7 +60,7 @@ namespace SkylineRush.Tests
         // ----------------------------------------------------------------------------------
 
         [Test]
-        public async Task Test_ParentalGate_DefersEntirelyToServer_OnAccept()
+        public void Test_ParentalGate_DefersEntirelyToServer_OnAccept()
         {
             var api = MakeService(out var transport);
 
@@ -69,13 +79,13 @@ namespace SkylineRush.Tests
             });
 
             var gate = new ParentalGateController(api);
-            await gate.OpenAsync();
+            RunSync(gate.OpenAsync());
             Assert.AreEqual("tok_abc", gate.ChallengeToken, "Challenge token must be relayed verbatim from the server");
 
             gate.AppendDigit('9');
             gate.AppendDigit('9');
             gate.AppendDigit('9'); // deliberately "wrong" — the client cannot know this
-            bool success = await gate.SubmitAsync();
+            bool success = RunSync(gate.SubmitAsync());
 
             Assert.IsTrue(success, "Client must accept whatever the server decides, not its own arithmetic");
             Assert.AreEqual("pgt_xyz", gate.LastVerifiedGateToken, "Gate token must come from the server response");
@@ -83,7 +93,7 @@ namespace SkylineRush.Tests
         }
 
         [Test]
-        public async Task Test_ParentalGate_DefersEntirelyToServer_OnReject()
+        public void Test_ParentalGate_DefersEntirelyToServer_OnReject()
         {
             var api = MakeService(out var transport);
             transport.EnqueueResponse(new HttpResponse
@@ -99,9 +109,9 @@ namespace SkylineRush.Tests
             });
 
             var gate = new ParentalGateController(api);
-            await gate.OpenAsync();
+            RunSync(gate.OpenAsync());
             gate.AppendDigit('4');
-            bool success = await gate.SubmitAsync();
+            bool success = RunSync(gate.SubmitAsync());
 
             Assert.IsFalse(success, "A server rejection must fail the flow regardless of client-side guesses");
             Assert.IsNull(gate.LastVerifiedGateToken, "No gate token should ever be minted client-side");
@@ -109,12 +119,12 @@ namespace SkylineRush.Tests
         }
 
         [Test]
-        public async Task Test_ParentalGate_RejectsNonNumericInput_WithoutContactingServer()
+        public void Test_ParentalGate_RejectsNonNumericInput_WithoutContactingServer()
         {
             var api = MakeService(out var transport);
             var gate = new ParentalGateController(api);
             // No digits appended -> InputDigits is empty, which cannot parse as an integer.
-            bool success = await gate.SubmitAsync();
+            bool success = RunSync(gate.SubmitAsync());
 
             Assert.IsFalse(success);
             Assert.AreEqual(0, transport.CallCount, "A format-only rejection must never reach the network");
@@ -126,7 +136,7 @@ namespace SkylineRush.Tests
         // ----------------------------------------------------------------------------------
 
         [Test]
-        public async Task Test_Shop_RedirectsMinorsToParentalGate_WithoutCallingServer()
+        public void Test_Shop_RedirectsMinorsToParentalGate_WithoutCallingServer()
         {
             var api = MakeService(out var transport);
             var shop = new ShopController(api);
@@ -134,7 +144,7 @@ namespace SkylineRush.Tests
             string gatedSku = null;
             shop.OnParentalGateRequired += sku => gatedSku = sku;
 
-            await shop.RequestPurchaseAsync("cores_small", "under_13");
+            RunSync(shop.RequestPurchaseAsync("cores_small", "under_13"));
 
             Assert.AreEqual("cores_small", gatedSku, "under_13 purchases must raise the parental gate event");
             Assert.AreEqual("cores_small", shop.PendingSkuId);
@@ -142,7 +152,7 @@ namespace SkylineRush.Tests
         }
 
         [Test]
-        public async Task Test_Shop_AdultPurchase_SkipsParentalGate_AndCallsServer()
+        public void Test_Shop_AdultPurchase_SkipsParentalGate_AndCallsServer()
         {
             var api = MakeService(out var transport);
             transport.EnqueueResponse(new HttpResponse
@@ -155,7 +165,7 @@ namespace SkylineRush.Tests
             bool gateRequested = false;
             shop.OnParentalGateRequired += _ => gateRequested = true;
 
-            await shop.RequestPurchaseAsync("cores_small", "16_plus");
+            RunSync(shop.RequestPurchaseAsync("cores_small", "16_plus"));
 
             Assert.IsFalse(gateRequested, "16_plus should never be routed through the parental gate");
             Assert.AreEqual(1, transport.CallCount, "Adult purchase should call the purchase receipt endpoint directly");
@@ -163,7 +173,7 @@ namespace SkylineRush.Tests
         }
 
         [Test]
-        public async Task Test_Shop_MinorPurchase_CompletesOnlyAfterGateToken()
+        public void Test_Shop_MinorPurchase_CompletesOnlyAfterGateToken()
         {
             var api = MakeService(out var transport);
             transport.EnqueueResponse(new HttpResponse
@@ -173,11 +183,11 @@ namespace SkylineRush.Tests
             });
 
             var shop = new ShopController(api);
-            await shop.RequestPurchaseAsync("cores_small", "under_13");
+            RunSync(shop.RequestPurchaseAsync("cores_small", "under_13"));
             Assert.AreEqual(0, transport.CallCount);
 
             // Simulate the parental gate having been cleared and a token minted server-side.
-            await shop.CompletePurchaseAsync(shop.PendingSkuId, "pgt_xyz");
+            RunSync(shop.CompletePurchaseAsync(shop.PendingSkuId, "pgt_xyz"));
 
             Assert.AreEqual(1, transport.CallCount);
             var sentHeaders = transport.RequestedHeaders[0];
@@ -190,7 +200,7 @@ namespace SkylineRush.Tests
         // ----------------------------------------------------------------------------------
 
         [Test]
-        public async Task Test_SupplyDrop_OddsTable_OnlyReflectsServerResponse()
+        public void Test_SupplyDrop_OddsTable_OnlyReflectsServerResponse()
         {
             var api = MakeService(out var transport);
             // Deliberately odd, non-"round" probability values that could never plausibly be a
@@ -204,7 +214,7 @@ namespace SkylineRush.Tests
             });
 
             var drops = new SupplyDropController(api);
-            await drops.OpenAsync();
+            RunSync(drops.OpenAsync());
 
             Assert.IsNotNull(drops.OddsTable);
             Assert.AreEqual(2, drops.OddsTable.entries.Length);
@@ -213,7 +223,7 @@ namespace SkylineRush.Tests
         }
 
         [Test]
-        public async Task Test_SupplyDrop_OpenDrop_IsIdempotent()
+        public void Test_SupplyDrop_OpenDrop_IsIdempotent()
         {
             var api = MakeService(out var transport);
             transport.EnqueueResponse(new HttpResponse { StatusCode = 200, BodyJson = "{\"table_id\":\"standard-v7\",\"version\":7,\"entries\":[]}" });
@@ -224,8 +234,8 @@ namespace SkylineRush.Tests
             });
 
             var drops = new SupplyDropController(api);
-            await drops.OpenAsync();
-            await drops.OpenDropAsync();
+            RunSync(drops.OpenAsync());
+            RunSync(drops.OpenDropAsync());
 
             var openDropHeaders = transport.RequestedHeaders[1];
             Assert.IsTrue(openDropHeaders.ContainsKey("Idempotency-Key"));
@@ -238,7 +248,7 @@ namespace SkylineRush.Tests
         // ----------------------------------------------------------------------------------
 
         [Test]
-        public async Task Test_ApiService_SubmitRun_SendsIdempotencyKey()
+        public void Test_ApiService_SubmitRun_SendsIdempotencyKey()
         {
             var api = MakeService(out var transport);
             transport.DefaultResponse = new HttpResponse
@@ -258,54 +268,54 @@ namespace SkylineRush.Tests
                 duration_seconds = 20f
             };
 
-            await api.SubmitRunAsync(request);
+            RunSync(api.SubmitRunAsync(request));
             AssertHasIdempotencyKey(transport, 0);
         }
 
         [Test]
-        public async Task Test_ApiService_Redeploy_SendsIdempotencyKey()
+        public void Test_ApiService_Redeploy_SendsIdempotencyKey()
         {
             var api = MakeService(out var transport);
             transport.DefaultResponse = new HttpResponse { StatusCode = 200, BodyJson = "{\"cores_spent\":10,\"cores_remaining\":40}" };
-            await api.RedeployAsync("run-1", "cores");
+            RunSync(api.RedeployAsync("run-1", "cores"));
             AssertHasIdempotencyKey(transport, 0);
         }
 
         [Test]
-        public async Task Test_ApiService_ClaimContract_SendsIdempotencyKey()
+        public void Test_ApiService_ClaimContract_SendsIdempotencyKey()
         {
             var api = MakeService(out var transport);
             transport.DefaultResponse = new HttpResponse { StatusCode = 200, BodyJson = "{\"contract_id\":\"c1\",\"reward\":{\"chips\":10,\"cores\":0}}" };
-            await api.ClaimContractAsync("c1");
+            RunSync(api.ClaimContractAsync("c1"));
             AssertHasIdempotencyKey(transport, 0);
         }
 
         [Test]
-        public async Task Test_ApiService_UnlockRosterItem_SendsIdempotencyKey()
+        public void Test_ApiService_UnlockRosterItem_SendsIdempotencyKey()
         {
             var api = MakeService(out var transport);
             transport.DefaultResponse = new HttpResponse { StatusCode = 200, BodyJson = "{\"ok\":true,\"balance\":{\"chips\":0,\"cores\":0}}" };
-            await api.UnlockRosterItemAsync("runner", "kael");
+            RunSync(api.UnlockRosterItemAsync("runner", "kael"));
             AssertHasIdempotencyKey(transport, 0);
         }
 
         [Test]
-        public async Task Test_ApiService_SubmitPurchaseReceipt_SendsIdempotencyKey()
+        public void Test_ApiService_SubmitPurchaseReceipt_SendsIdempotencyKey()
         {
             var api = MakeService(out var transport);
             transport.DefaultResponse = new HttpResponse { StatusCode = 200, BodyJson = "{\"status\":\"granted\",\"entitlement\":{\"chips\":0,\"cores\":50}}" };
-            await api.SubmitPurchaseReceiptAsync("cores_small", "tx1", "sig1");
+            RunSync(api.SubmitPurchaseReceiptAsync("cores_small", "tx1", "sig1"));
             AssertHasIdempotencyKey(transport, 0);
         }
 
         [Test]
-        public async Task Test_ApiService_MutatingCalls_GenerateDistinctIdempotencyKeys()
+        public void Test_ApiService_MutatingCalls_GenerateDistinctIdempotencyKeys()
         {
             var api = MakeService(out var transport);
             transport.DefaultResponse = new HttpResponse { StatusCode = 200, BodyJson = "{\"contract_id\":\"c1\",\"reward\":{\"chips\":10,\"cores\":0}}" };
 
-            await api.ClaimContractAsync("c1");
-            await api.ClaimContractAsync("c1");
+            RunSync(api.ClaimContractAsync("c1"));
+            RunSync(api.ClaimContractAsync("c1"));
 
             string key1 = transport.RequestedHeaders[0]["Idempotency-Key"];
             string key2 = transport.RequestedHeaders[1]["Idempotency-Key"];
@@ -313,11 +323,11 @@ namespace SkylineRush.Tests
         }
 
         [Test]
-        public async Task Test_ApiService_NonMutatingCalls_OmitIdempotencyKey()
+        public void Test_ApiService_NonMutatingCalls_OmitIdempotencyKey()
         {
             var api = MakeService(out var transport);
             transport.DefaultResponse = new HttpResponse { StatusCode = 200, BodyJson = "{\"ok\":true}" };
-            await api.EquipRosterItemAsync("runner", "vex");
+            RunSync(api.EquipRosterItemAsync("runner", "vex"));
 
             var headers = transport.RequestedHeaders[0];
             Assert.IsFalse(headers.ContainsKey("Idempotency-Key"), "roster/equip has no IdempotencyKeyHeader parameter in openapi.yaml");
@@ -354,7 +364,7 @@ namespace SkylineRush.Tests
         // ----------------------------------------------------------------------------------
 
         [Test]
-        public async Task Test_RosterController_Unlock_RefetchesFromServer_NeverGrantsLocally()
+        public void Test_RosterController_Unlock_RefetchesFromServer_NeverGrantsLocally()
         {
             var api = MakeService(out var transport);
             // Initial catalog load: item is locked.
@@ -373,10 +383,10 @@ namespace SkylineRush.Tests
             });
 
             var roster = new RosterController(api);
-            await roster.OpenAsync();
+            RunSync(roster.OpenAsync());
             Assert.IsFalse(roster.Runners[0].owned);
 
-            await roster.UnlockAsync(RosterTab.Runners, "kael");
+            RunSync(roster.UnlockAsync(RosterTab.Runners, "kael"));
 
             Assert.AreEqual(3, transport.CallCount, "Unlock must trigger a server re-fetch, not a local flag flip");
             Assert.IsTrue(roster.Runners[0].owned, "Owned state must reflect the server's post-unlock re-fetch response");
@@ -412,7 +422,7 @@ namespace SkylineRush.Tests
         }
 
         [Test]
-        public async Task Test_SettingsController_DataExport_RedirectsMinorsToParentalGate()
+        public void Test_SettingsController_DataExport_RedirectsMinorsToParentalGate()
         {
             var api = MakeService(out var transport);
             var settings = new SettingsController(api);
@@ -421,7 +431,7 @@ namespace SkylineRush.Tests
             PendingGatedAction requested = PendingGatedAction.None;
             settings.OnParentalGateRequired += action => requested = action;
 
-            await settings.RequestDataExportAsync();
+            RunSync(settings.RequestDataExportAsync());
 
             Assert.AreEqual(PendingGatedAction.DataExport, requested);
             Assert.AreEqual(0, transport.CallCount, "No export request should be sent before the gate is cleared");
