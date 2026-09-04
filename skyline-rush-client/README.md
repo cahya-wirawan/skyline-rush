@@ -7,10 +7,11 @@ Unity (C#) client project architecture and playable web runner for Skyline Rush 
 - `Assets/Scripts/Run/`: 3-lane state machine (`LaneStateMachine.cs`), 150ms input buffer (`InputBuffer.cs`), jump & slide controller with parabolic arc and fast-fall (`JumpSlideController.cs`), power-up state machine (`PowerUpStateMachine.cs`), continuous coordinate obstacle collision detection (`ObstacleCollisionHandler.cs`), and session coordinator (`RunSession.cs`).
 - `Assets/Scripts/ProceduralGen/`: Seeded deterministic procedural track generator (`ProceduralTrackGenerator.cs`) with BFS lookahead survivability proof (`SurvivablePathValidator.cs`) and breathing room enforcement.
 - `Assets/Scripts/Storage/`: Persistent file-backed storage (`SQLiteStorageLayer.cs`), Keychain wrapper (`KeychainWrapper.cs`), and bounded 500-entry FIFO queue (`OutboxQueue.cs`).
-- `Assets/Scripts/Networking/`: REST API client (`ApiClient.cs`), network DTOs, and outbox syncer (`OutboxSyncer.cs`) with non-retryable 4xx dead-lettering and non-destructive balance reconciliation.
+- `Assets/Scripts/Networking/`: REST API client (`ApiClient.cs`), typed per-endpoint service layer covering all 19 backend calls the web client makes (`SkylineRushApiService.cs`, generating an `Idempotency-Key` exactly where `openapi.yaml` requires one), network DTOs, and outbox syncer (`OutboxSyncer.cs`) with non-retryable 4xx dead-lettering and non-destructive balance reconciliation.
 - `Assets/Scripts/Ads/` & `Analytics/`: Server-enforced age-bucket gating (`AdMediationWrapper.cs`) and telemetry suppression for minor accounts (`AnalyticsManager.cs`).
-- `Assets/Scripts/Meta/`: Hub view controller, Run HUD, Redeploy modal (10 -> 20 -> 40 Cores escalation, 1 free ad revive), and Run Summary.
-- `Assets/Scripts/Views/`: Unity `MonoBehaviour` views (`RunnerView.cs`, `TrackSegmentView.cs`, `HubViewController.cs`, `AudioCueManager.cs`).
+- `Assets/Scripts/Meta/`: Hub view controller, Run HUD, Redeploy modal (10 -> 20 -> 40 Cores escalation, 1 free ad revive), Run Summary, and pure C# state/logic controllers for Shop, Roster, Contracts, Leaderboard, Settings, Parental Gate, and Supply Drop — each mirroring the corresponding flow already working in `web/game.js`.
+- `Assets/Scripts/Run/RunLoopDriver.cs` & `TouchInputBridge.cs`: `MonoBehaviour` orchestration — drives `RunSession.Update()` per frame and bridges touch/keyboard input into `InputBuffer`, the direct analogs of `web/game.js`'s `gameLoop()` and input handlers.
+- `MonoBehaviour` views live alongside the systems they render: `RunnerView.cs` & `AudioCueManager.cs` in `Run/`, `TrackSegmentView.cs` in `ProceduralGen/`, `HubViewController.cs` in `Meta/`.
 - `web/`: Full playable HTML5 Canvas & Web Audio runner (`index.html`, `style.css`, `game.js`) simulating the 3-lane Vantage City rooftop gameplay and live-connected to the backend REST API Gateway (`/v1/*`).
 - `simulation-runner/`: Automated simulation runner (`run-simulation.js`) validating Acceptance Criteria AC-13, AC-14, AC-15, and AC-16.
 
@@ -45,9 +46,17 @@ Unity (C#) client project architecture and playable web runner for Skyline Rush 
 
 ## Running Tests
 
-Run the client simulation suite:
+Run the client simulation suite (JS reimplementation of the core invariants, no Unity install required):
 ```bash
 npm test
+```
+
+Run the real Unity EditMode NUnit suite (25 tests covering the C# under `Assets/Scripts/`; requires Unity 6000.6.0f1, installed via `Unity Hub -- --headless install --version 6000.6.0f1 --module ios`):
+```bash
+UNITY="/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app/Contents/MacOS/Unity"
+"$UNITY" -batchmode -nographics -quit -projectPath . -logFile /tmp/unity_compile.log      # compile check only
+"$UNITY" -batchmode -nographics -projectPath . -runTests -testPlatform EditMode \
+  -testResults /tmp/unity_test_results.xml -logFile /tmp/unity_tests.log                  # omit -quit: it races -runTests
 ```
 
 ## Running the Playable Web Client

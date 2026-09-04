@@ -22,7 +22,7 @@ skyline-rush/
 ├── skyline-rush-backend/      # Express/NestJS microservices monorepo, PostgreSQL & Redis configs,
 │                              # Docker Compose prod, K8s manifests (k8s/), Prometheus metrics (/metrics),
 │                              # observability/ (alerting rules, 4 Grafana dashboards, validator)
-├── skyline-rush-client/       # Unity 2022.3 LTS scaffolding, C# run engine, playable Web Runner (web/),
+├── skyline-rush-client/       # Unity 6 project (compiles + tests pass under a real Editor), C# run engine, playable Web Runner (web/),
 │                              # a11y + perf check scripts, PERF_REPORT.md
 └── report-01.md               # Unified Gauntlet execution report: Phase 0/1 & Options A/B/C (0.978),
                                # Web Runner v3 visual overhaul, Phase 3 release readiness (0.923)
@@ -88,8 +88,8 @@ TypeScript / Express / NestJS microservices monorepo:
   - `k8s/`: Complete 10-manifest suite (`namespace`, `configmap`, `secrets`, `migration-job`, `postgres-statefulset`, `redis-deployment`, `backend-deployment`, `backend-service`, `hpa`, `ingress`) with non-root security contexts (UID 1000) and dropped capabilities.
 
 ### 3. `skyline-rush-client/`
-Client engine targeting Unity 2022.3 LTS (iOS/iPadOS) and interactive web:
-- **Unity 2022.3 Scaffolding**: `ProjectSettings/ProjectVersion.txt` (`2022.3.20f1`), `Packages/manifest.json`, 9 modular Assembly Definitions (`.asmdef`), and `MonoBehaviour` views.
+Client engine targeting Unity 6 (iOS/iPadOS) and interactive web:
+- **Unity 6 Project**: `ProjectSettings/ProjectVersion.txt` (`6000.6.0f1`), `Packages/manifest.json`, 9 modular Assembly Definitions (`.asmdef`), and `MonoBehaviour` views. Compiles cleanly and its 25-test EditMode suite passes for real under a real Unity Editor (`Unity -runTests -testPlatform EditMode`) — this is genuine Editor-verified state, not hand-authored scaffolding: no `.unity` Scenes or Prefabs exist yet, so there's nothing to play from inside the Editor.
 - **`Assets/Scripts/Run/`**: 3-lane state machine, 150ms input buffer, parabolic jump with mid-air slide fast-fall, continuous coordinate obstacle collision, vacated lane immunity, and power-up state machine (Shield, Magnet, Boost, 2x Multiplier).
 - **`Assets/Scripts/ProceduralGen/`**: Seeded deterministic track generator with BFS survivable path invariant and mandatory breathing room after maximum difficulty segments.
 - **`Assets/Scripts/Storage/`**: Persistent `SQLiteStorageLayer.cs` and `KeychainWrapper.cs`, bounded 500-entry FIFO outbox queue with terminal 4xx dead-lettering, and non-destructive server balance reconciliation.

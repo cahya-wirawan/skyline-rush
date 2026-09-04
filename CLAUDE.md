@@ -10,7 +10,7 @@ The repository is structured into three decoupled sub-projects per `build-packag
 
 - **`skyline-rush-contracts/`**: OpenAPI 3.0 specification (`openapi.yaml`, 25 paths) and JSON schemas (`schemas/supply-drop-table.schema.json`, `schemas/content-pack.schema.json`) serving as the single source of truth for all network contracts.
 - **`skyline-rush-backend/`**: Node.js / TypeScript microservices monorepo (`gateway`, `profile-auth`, `economy`, `run-integrity`, `leaderboard`, `liveops`, `billing`, `privacy`), PostgreSQL 16 migrations and connection pooling, production Docker Compose (`docker-compose.prod.yml`), Kubernetes manifests (`k8s/`), Prometheus alerting rules and Grafana dashboards (`observability/`), and Jest test suites (55 tests across 2 files: 54 passing, 1 conditionally skipped without a live Postgres connection).
-- **`skyline-rush-client/`**: Unity 2022.3 LTS C# project architecture (`Assets/Scripts/Run/`, `ProceduralGen/`, `Storage/`, `Networking/`, `Ads/`, `Meta/`), package manifests, Assembly Definitions (`.asmdef`), simulation test runner, and a complete playable Web Runner in `web/` (Canvas2D + dynamic Web Audio synthesizer).
+- **`skyline-rush-client/`**: Unity 6 C# project (`Assets/Scripts/Run/`, `ProceduralGen/`, `Storage/`, `Networking/`, `Ads/`, `Meta/`), package manifests, Assembly Definitions (`.asmdef`), an EditMode NUnit suite that genuinely compiles and passes under a real Unity Editor (25 tests), a JS simulation test runner mirroring the same invariants for the web client, and a complete playable Web Runner in `web/` (Canvas2D + dynamic Web Audio synthesizer). No `.unity` Scenes or Prefabs exist yet — Editor-GUI-only work, not done from this environment.
 
 ---
 
@@ -49,6 +49,13 @@ kubectl apply -f k8s/
 cd skyline-rush-client
 npm install
 npm test            # Runs client simulation suite (Core loop, PCG invariant, Outbox, Age gating)
+
+# Real Unity Editor compile check and EditMode test run (Unity 6000.6.0f1 required,
+# installed via Unity Hub's headless CLI — see skyline-rush-client/README.md):
+UNITY="/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app/Contents/MacOS/Unity"
+"$UNITY" -batchmode -nographics -quit -projectPath . -logFile /tmp/unity_compile.log   # compile check
+"$UNITY" -batchmode -nographics -projectPath . -runTests -testPlatform EditMode \
+  -testResults /tmp/unity_test_results.xml -logFile /tmp/unity_tests.log               # NUnit run (omit -quit)
 ```
 
 ---
