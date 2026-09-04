@@ -54,7 +54,12 @@ namespace SkylineRush.Meta
         }
     }
 
-    public class HubController
+    /// <summary>
+    /// Cached last-known Hub currency/state values (renamed from the original "HubController" to
+    /// avoid a name collision with the MonoBehaviour Meta/HubViewController.cs now that this file
+    /// sits alongside 8+ other `*Controller` classes in the SkylineRush.Meta namespace).
+    /// </summary>
+    public class HubStateCache
     {
         public int CachedChips { get; set; } = 0;
         public int CachedCores { get; set; } = 0;

@@ -52,7 +52,7 @@ namespace SkylineRush.Run
             // Update shield visual
             if (shieldBubble != null)
             {
-                shieldBubble.SetActive(_session.PowerUps.HasShield);
+                shieldBubble.SetActive(_session.PowerUps.IsShieldActive);
             }
         }
 

@@ -1,7 +1,9 @@
 {
     "name": "SkylineRush.Billing",
     "rootNamespace": "SkylineRush.Billing",
-    "references": [],
+    "references": [
+        "SkylineRush.Networking"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
